@@ -43,10 +43,15 @@ node tools/promote-manifest.mjs pricing-search 1.0.0 && node tools/promote-manif
 npm run start:host
 ```
 
-Then open http://localhost:44300/pricing-search.html?customerId=1001 — the other three
-pages are linked from the header. The console shows the startup telemetry: `shell.start`
-→ `shell.manifest.loaded` → `shell.remote.load.success` → `feature.register.completed` →
-`feature.page.ready`.
+Then open http://localhost:44300/ — the landing page. It loads the shell like every other
+host page, but hosts no feature element, so the shell finds nothing to do and stops. A
+panel at the bottom lists every JavaScript file the page actually downloaded, grouped by
+which published artifact served it: three shell files, nothing else. Click any menu item
+and the panel updates to show that page's provider files appear, and only that page's —
+`pricing-search` never pulls in `pricing-details`, `feature-two`, or `feature-three`.
+
+The same claim is enforced in `apps/host-e2e/src/deferred-loading.spec.ts`, checked against
+the network rather than the panel's own report of itself.
 
 ## What happens when a page loads
 
@@ -149,8 +154,13 @@ resolve, across all four artifacts.
 
 ## Verified
 
-Run `npm test` (28 unit tests), `npm run lint:all`, and `npm run test:e2e` (20 specs).
+Run `npm test` (28 unit tests), `npm run lint:all`, and `npm run test:e2e` (25 specs).
 
+- **Nothing loads until a feature is requested.** The landing page downloads the shell and
+  nothing else — no manifest fetch even, since the shell returns as soon as it finds no
+  `data-angular-feature` element. Navigating to a feature page downloads that provider's
+  files and no other provider's; navigating between the two pricing pages swaps one page
+  chunk for the other without ever fetching both.
 - **One runtime, cold cache.** Every framework file is fetched from `/ui/shell/current/`,
   never a provider path, on all four pages — asserted per file, since Angular legitimately
   ships several secondary entry points.

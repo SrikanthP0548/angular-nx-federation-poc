@@ -65,7 +65,14 @@ function selectFeature(manifest: RuntimeManifest, featureKey: string): FeatureMa
 async function startShell(): Promise<void> {
   const host = document.querySelector<HTMLElement>('[data-angular-feature]');
   if (!host) {
-    throw new Error('shell.start.failed: no element with data-angular-feature found');
+    // Not an error. The shell loader lives in the shared host template, so it
+    // runs on pages that host no migrated feature at all. Those pages must
+    // cost nothing beyond the shell itself: no manifest fetch, no provider
+    // request, no feature code. Treating this as a failure would put an error
+    // panel on every unmigrated page.
+    console.info('[shell] shell.idle — no data-angular-feature on this page, nothing to load');
+    window.dispatchEvent(new CustomEvent('shell-telemetry', { detail: { name: 'shell.idle' } }));
+    return;
   }
   const featureKey = host.dataset['angularFeature'];
   if (!featureKey) {
