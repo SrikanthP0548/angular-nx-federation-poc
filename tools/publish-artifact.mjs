@@ -18,11 +18,24 @@ import {
   listProviderDirs,
   readDescriptor,
   validateAgainstRemoteEntry,
+  validateAllProviders,
   validateDescriptor,
 } from './provider-descriptors.mjs';
 
 const [artifactName, version] = process.argv.slice(2);
 const repoRoot = path.resolve(import.meta.dirname, '..');
+
+// Cross-provider uniqueness (featureKey, elementName, artifact, remoteName)
+// is only meaningful checked globally, and `npm test` running it is not a
+// guarantee for a manual `npm run release` — enforce it directly here so
+// publishing can't skip the one check that catches a duplicate artifact
+// name silently making a provider unreachable in the map below.
+const globalProblems = validateAllProviders();
+if (globalProblems.length > 0) {
+  console.error('publish rejected: provider descriptors are not globally consistent:');
+  for (const problem of globalProblems) console.error(`  - ${problem}`);
+  process.exit(1);
+}
 
 /** Artifacts are discovered from the provider descriptors, plus the shell. */
 function buildArtifactMap() {
@@ -59,11 +72,31 @@ if (!fs.existsSync(source)) {
   process.exit(1);
 }
 
-// Build provenance: fails closed on a missing or stale marker.
+// Build provenance: fails closed on a missing or stale marker. This proves
+// *when* dist/ was produced, but not *what source tree* it came from — a
+// dirty working tree at build time means the artifact contains changes that
+// git HEAD does not, and the commit metadata below would misattribute it to
+// a commit that doesn't actually contain what was published.
 try {
   assertBuiltInThisRun(source);
 } catch (err) {
   console.error(`publish rejected: ${err.message}`);
+  process.exit(1);
+}
+
+let gitStatus = null;
+try {
+  gitStatus = execSync('git status --porcelain', { cwd: repoRoot }).toString().trim();
+} catch {
+  // Publishing outside a git checkout is allowed; metadata below records it.
+}
+const dirty = Boolean(gitStatus);
+if (dirty && !process.env.ALLOW_DIRTY_PUBLISH) {
+  console.error('publish rejected: working tree is not clean');
+  console.error(`  ${gitStatus.split('\n').join('\n  ')}`);
+  console.error(
+    'commit or stash first, or set ALLOW_DIRTY_PUBLISH=1 to publish anyway (recorded as dirty in build-metadata.json)'
+  );
   process.exit(1);
 }
 
@@ -125,6 +158,9 @@ const metadata = {
   artifact: artifactName,
   version,
   commit,
+  // Explicit rather than inferred from absence: a reader should never have
+  // to wonder whether "dirty" was checked and found clean, or never checked.
+  dirty,
   builtAt: new Date().toISOString(),
   angularVersion,
   platformContract: '1.x',
@@ -141,10 +177,42 @@ fs.writeFileSync(path.join(target, 'checksums.json'), JSON.stringify(checksumTre
 // The shell is referenced by every host page through one stable URL, so it
 // also gets a mutable `current` pointer with a short cache lifetime.
 if (artifactName === 'shell') {
-  const current = path.join(repoRoot, config.publishDir, 'current');
-  fs.rmSync(current, { recursive: true, force: true });
-  fs.cpSync(target, current, { recursive: true });
+  const publishDir = path.join(repoRoot, config.publishDir);
+  const current = path.join(publishDir, 'current');
+  const pid = process.pid;
+  const stagedNew = path.join(publishDir, `.current-tmp-${pid}`);
+  const staleOld = path.join(publishDir, `.current-old-${pid}`);
+
+  // Build the replacement fully under a temp name first, then swap it in
+  // with two directory renames (each atomic on POSIX) instead of the
+  // previous delete-then-recursive-copy, which left a real window where a
+  // concurrent request could see `current` missing or half-written. POSIX
+  // rename cannot replace a non-empty directory in one step, so the old
+  // `current` is moved aside rather than overwritten directly — that move is
+  // itself atomic, and the moment the new directory lands at `current` is a
+  // single syscall, not a copy loop.
+  fs.rmSync(stagedNew, { recursive: true, force: true });
+  fs.cpSync(target, stagedNew, { recursive: true });
+  if (fs.existsSync(current)) {
+    fs.renameSync(current, staleOld);
+  }
+  fs.renameSync(stagedNew, current);
+  fs.rmSync(staleOld, { recursive: true, force: true });
+
   console.info(`  updated shell/current -> ${version}`);
+
+  // manifest.json's shell.version is what the shell reports in its own
+  // startup telemetry; leaving it static once the shell version drifts is
+  // exactly the kind of thing that quietly makes telemetry lie.
+  const manifestPath = path.join(repoRoot, 'publish', 'ui', 'manifest.json');
+  if (fs.existsSync(manifestPath)) {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.shell = { ...manifest.shell, version };
+    const tempManifestPath = `${manifestPath}.${pid}.tmp`;
+    fs.writeFileSync(tempManifestPath, JSON.stringify(manifest, null, 2) + '\n');
+    fs.renameSync(tempManifestPath, manifestPath);
+    console.info(`  updated manifest.json shell.version -> ${version}`);
+  }
 }
 
 console.info(`published ${artifactName}@${version} to ${path.relative(repoRoot, target)}`);

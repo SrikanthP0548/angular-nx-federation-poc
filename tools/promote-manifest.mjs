@@ -58,10 +58,13 @@ if (!fs.existsSync(metadataPath)) {
 }
 const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
 
-// Artifact integrity.
+// Artifact integrity, including build-metadata.json itself — the file this
+// script trusts for the served pages, element names and exposed modules it
+// gates promotion on. checksums.json is the one legitimate exclusion: it is
+// written after the tree is hashed, so it cannot contain its own hash.
 const checksums = JSON.parse(fs.readFileSync(path.join(artifactDir, 'checksums.json'), 'utf8'));
 for (const [relative, expected] of Object.entries(checksums)) {
-  if (relative === 'checksums.json' || relative === 'build-metadata.json') continue;
+  if (relative === 'checksums.json') continue;
   const actual = `sha256-${createHash('sha256').update(fs.readFileSync(path.join(artifactDir, relative))).digest('hex')}`;
   if (actual !== expected) {
     fail(`checksum mismatch for ${relative} — the published artifact was modified after publication`);

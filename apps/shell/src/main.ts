@@ -19,12 +19,29 @@ const SHELL_CONTRACT_MAJOR = '1';
 
 /**
  * The shell is served from /ui/shell/current/ but hosted by pages at
- * arbitrary paths. Its own federation
- * metadata must therefore be resolved against the shell's asset location,
- * not the host document — otherwise the shared-dependency import map is
- * never installed and the first Angular import fails to resolve.
+ * arbitrary paths. Its own federation metadata must therefore be resolved
+ * against the shell's asset location, not the host document — otherwise the
+ * shared-dependency import map is never installed and the first Angular
+ * import fails to resolve.
+ *
+ * Read from this script's own <script src> in the DOM rather than
+ * `import.meta.url`: under Angular's Vite-based dev server (`nx serve
+ * shell`), `import.meta.url` resolves to an internal `@fs/.../vite-root/...`
+ * virtual path with no trailing slash after `new URL('.', ...)`, which
+ * silently produces a malformed remoteEntry.json URL and breaks federation
+ * before Angular ever loads. `HTMLScriptElement.src` always reflects the
+ * browser-resolved absolute URL, in both dev and the production/module-shim
+ * path — verified against both.
  */
-const SHELL_BASE_URL = new URL('.', import.meta.url).href;
+function resolveShellBaseUrl(): string {
+  const script = document.querySelector<HTMLScriptElement>('script[src$="main.js"]');
+  if (!script) {
+    throw new Error('shell.start.failed: could not locate this script\'s own <script src="...main.js"> tag');
+  }
+  return new URL('.', script.src).href;
+}
+
+const SHELL_BASE_URL = resolveShellBaseUrl();
 
 async function loadRuntimeManifest(url: string): Promise<RuntimeManifest> {
   const response = await fetch(url, { cache: 'no-cache' });

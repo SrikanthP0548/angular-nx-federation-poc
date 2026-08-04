@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import {
   listProviderDirs,
@@ -11,6 +12,7 @@ import {
 } from './provider-descriptors.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
+const providersDir = path.join(repoRoot, 'apps', 'providers');
 
 test('every provider has a valid descriptor matching its exposes map', () => {
   const problems = validateAllProviders();
@@ -139,4 +141,61 @@ test('an old-shape descriptor (top-level exposedModule) fails the schema check',
     problems.some((p) => p.includes('missing "exposedModule"')),
     `expected the per-page exposedModule to be reported missing, got: ${problems.join('; ')}`
   );
+});
+
+test('a duplicate artifact name and remoteName across providers is reported', () => {
+  // publish-artifact.mjs keys its artifact map by descriptor.artifact, so a
+  // collision silently makes one provider unreachable by name — real enough
+  // to exercise against a real (temporary) provider directory rather than an
+  // injected override, matching how validateAllProviders is actually used.
+  const tempDir = path.join(providersDir, '_test-duplicate-provider');
+  fs.mkdirSync(tempDir, { recursive: true });
+  try {
+    fs.writeFileSync(
+      path.join(tempDir, 'federation.config.mjs'),
+      [
+        "import { withNativeFederation } from '@angular-architects/native-federation/config';",
+        'export default withNativeFederation({',
+        "  name: 'pricing',",
+        '  exposes: {',
+        "    './duplicate-test': './apps/providers/pricing-provider/src/pricing-search.register.ts',",
+        '  },',
+        '});',
+      ].join('\n')
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'pages.json'),
+      JSON.stringify(
+        {
+          schemaVersion: '1.1',
+          artifact: 'pricing', // collides with pricing-provider
+          remoteName: 'pricing', // collides with pricing-provider
+          pages: [
+            {
+              featureKey: 'duplicate-test-feature',
+              elementName: 'ca-pricing-search', // reuses a real registered name
+              exposedModule: './duplicate-test',
+            },
+          ],
+        },
+        null,
+        2
+      )
+    );
+
+    const problems = validateAllProviders();
+    assert.ok(
+      problems.some((p) => p.includes('artifact "pricing" is claimed by both')),
+      `expected an artifact-collision problem, got: ${problems.join('; ')}`
+    );
+    assert.ok(
+      problems.some((p) => p.includes('remoteName "pricing" is claimed by both')),
+      `expected a remoteName-collision problem, got: ${problems.join('; ')}`
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+
+  // The temp provider must not leak into a later test run.
+  assert.ok(!listProviderDirs().includes('_test-duplicate-provider'));
 });

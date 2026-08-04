@@ -196,10 +196,34 @@ export function validateAllProviders() {
   const problems = [];
   const featureKeyOwner = new Map();
   const elementOwner = new Map();
+  const artifactOwner = new Map();
+  const remoteNameOwner = new Map();
 
   for (const dir of listProviderDirs()) {
     const { descriptor, problems: own } = validateDescriptor(dir);
     problems.push(...own.map((p) => `${dir}: ${p}`));
+
+    // publish-artifact.mjs keys its artifact map by `descriptor.artifact`,
+    // so a collision here silently makes one provider unreachable by name —
+    // whichever is processed last in the map wins, the other can never be
+    // published or promoted again through the normal CLI.
+    if (descriptor.artifact) {
+      const priorArtifact = artifactOwner.get(descriptor.artifact);
+      if (priorArtifact) {
+        problems.push(`artifact "${descriptor.artifact}" is claimed by both ${priorArtifact} and ${dir}`);
+      } else {
+        artifactOwner.set(descriptor.artifact, dir);
+      }
+    }
+
+    if (descriptor.remoteName) {
+      const priorRemote = remoteNameOwner.get(descriptor.remoteName);
+      if (priorRemote) {
+        problems.push(`remoteName "${descriptor.remoteName}" is claimed by both ${priorRemote} and ${dir}`);
+      } else {
+        remoteNameOwner.set(descriptor.remoteName, dir);
+      }
+    }
 
     for (const page of descriptor.pages ?? []) {
       const priorKey = featureKeyOwner.get(page.featureKey);

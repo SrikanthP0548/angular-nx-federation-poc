@@ -262,5 +262,21 @@ bare specifier against the import map.
 is in-memory. A previous iteration with a mock BFF (XML→JSON mapping, 7 tests) and an ASPX
 host simulation is preserved at tag `poc-with-bff-and-aspx-host`.
 
-**Not covered:** CI/CD pipeline definitions, accessibility and performance budget gates,
-manifest signing, and authorization.
+**Not covered:** accessibility and performance budget gates, manifest signing, and
+authorization. CI/CD *is* covered — see `.github/workflows/ci.yml`: lint/test/build, the
+federation-sharing gate, publish + promote all four features, then the full E2E suite against
+the published artifacts on Chrome and Edge.
+
+## Troubleshooting
+
+**`fatal error: all goroutines are asleep - deadlock` from esbuild.** Not reproduced in this
+project's own development or CI — `esbuild`'s JS wrapper and native `@esbuild/<platform>`
+binary versions match (`0.28.1`/`0.28.1` at time of writing; check with
+`node -e "console.log(require('esbuild/package.json').version)"` against the version in
+`node_modules/@esbuild/<platform>/package.json`), and architecture matches (`file
+node_modules/@esbuild/*/bin/esbuild`). This failure mode is a known class of issue in esbuild's
+Go runtime under some sandboxed or resource-constrained execution environments, independent of
+this repository's source or config. If it occurs: confirm the two esbuild versions above
+actually match (a mismatch there is the most common concrete cause and is fixable with a clean
+`rm -rf node_modules && npm ci`); if they already match, it is very likely specific to the
+execution environment rather than something a source change here can address.
