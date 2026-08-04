@@ -18,8 +18,8 @@
     "skipDefaultLibCheck": true,
     "strict": false,
     "paths": {
-      "@company/angular-platform-contract": [
-        "./libs/platform/contract/src/index.ts"
+      "@company/shared-core": [
+        "./libs/shared/core/src/index.ts"
       ]
     }
   },

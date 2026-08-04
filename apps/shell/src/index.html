@@ -2,27 +2,27 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Shell dev host (simulates ASPX output)</title>
+    <title>Shell dev host</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
   </head>
   <body>
     <!--
-      Development stand-in for what Pricing.aspx + AngularHost.Master render
-      (doc section 8.2). The production-like host page lives in
-      legacy-host/Pricing.html and is served by the host server.
+      Development stand-in for a host page. The real host pages, one per
+      feature entry, are served by tools/host-simulator against published
+      artifacts — which is the topology the E2E specs run against.
     -->
     <main
       id="angular-page-host"
-      data-angular-feature="pricing"
+      data-angular-feature="pricing-search"
       data-manifest-url="/manifest.dev.json"
     >
-      <ca-pricing-page customer-id="1001"></ca-pricing-page>
+      <ca-pricing-search customer-id="1001"></ca-pricing-search>
     </main>
 
     <script type="application/json" id="angular-bootstrap-context">
-      { "apiBaseUrl": "http://localhost:7040/api" }
+      { "assetBasePath": "/ui" }
     </script>
   </body>
 </html>

@@ -6,7 +6,7 @@
   },
   "include": [
     "src/**/*.ts",
-    "../../libs/platform/contract/src/index.ts"
+    "../../libs/shared/core/src/index.ts"
   ],
   "exclude": [
     "src/**/*.spec.ts",

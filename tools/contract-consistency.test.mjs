@@ -16,7 +16,7 @@ import path from 'node:path';
 const repoRoot = path.resolve(import.meta.dirname, '..');
 
 const contractSource = fs.readFileSync(
-  path.join(repoRoot, 'libs/platform/contract/src/lib/contract.ts'),
+  path.join(repoRoot, 'libs/shared/core/src/lib/shared-core.ts'),
   'utf8'
 );
 const loaderSource = fs.readFileSync(path.join(repoRoot, 'apps/shell/src/main.ts'), 'utf8');
@@ -39,7 +39,7 @@ test('the shell loader\'s contract major matches PLATFORM_CONTRACT_VERSION', () 
 test('the shell loader has no runtime import of the contract package', () => {
   // A value import here would break every page: main.js runs before the
   // import map exists, so the bare specifier cannot resolve.
-  const contractImports = [...loaderSource.matchAll(/^import\s+([^;]*?)\s+from\s+['"]@company\/angular-platform-contract['"]/gm)];
+  const contractImports = [...loaderSource.matchAll(/^import\s+([^;]*?)\s+from\s+['"]@company\/shared-core['"]/gm)];
 
   for (const [statement, clause] of contractImports) {
     assert.ok(

@@ -1,8 +1,7 @@
 /**
- * Shell bootstrap (doc section 6.3): creates one Angular application
- * environment for the current host document — without a traditional root
- * component — then loads the selected remote and invokes the platform
- * registration contract.
+ * Shell bootstrap: creates one Angular application environment for the
+ * current host document — without a traditional root component — then loads
+ * the selected provider and invokes the registration contract.
  */
 import { createApplication } from '@angular/platform-browser';
 import { loadRemoteModule } from '@angular-architects/native-federation';
@@ -15,7 +14,7 @@ import {
   RuntimeConfig,
   RuntimeManifest,
   isContractCompatible,
-} from '@company/angular-platform-contract';
+} from '@company/shared-core';
 import { appConfig } from './app/app.config';
 import { ConsolePlatformLogger } from './telemetry';
 import { renderShellFailure } from './shell-failure';
@@ -26,10 +25,7 @@ export interface BootstrapFeatureOptions {
   feature: FeatureManifestEntry;
 }
 
-/**
- * Non-sensitive bootstrap configuration rendered by the host page
- * (doc section 8.2, `#angular-bootstrap-context`).
- */
+/** Non-sensitive bootstrap configuration rendered by the host page. */
 function readBootstrapContext(): Partial<RuntimeConfig> & Record<string, unknown> {
   const script = document.getElementById('angular-bootstrap-context');
   if (!script?.textContent?.trim()) {
@@ -54,15 +50,16 @@ export async function bootstrapFeature(options: BootstrapFeatureOptions): Promis
   const bootstrapContext = readBootstrapContext();
   const runtimeConfig: RuntimeConfig = {
     environment: manifest.environment,
-    apiBaseUrl: typeof bootstrapContext.apiBaseUrl === 'string' ? bootstrapContext.apiBaseUrl : '/api',
     assetBasePath: typeof bootstrapContext.assetBasePath === 'string' ? bootstrapContext.assetBasePath : '/ui',
   };
 
-  // Compatibility gate BEFORE loading remote code (doc sections 6.1, 12.2).
+  // Compatibility gate before loading provider code. main.ts already checked
+  // the manifest entry; this re-checks using shared-core's own implementation,
+  // because the manifest and the artifact can disagree.
   if (!isContractCompatible(feature.contractVersion)) {
     logger.error('shell.feature.incompatible', feature.contractVersion, { shellContract: PLATFORM_CONTRACT_VERSION });
     throw new Error(
-      `shell.feature.incompatible: remote requires contract ${feature.contractVersion}, shell provides ${PLATFORM_CONTRACT_VERSION}`
+      `shell.feature.incompatible: provider requires contract ${feature.contractVersion}, shell provides ${PLATFORM_CONTRACT_VERSION}`
     );
   }
 

@@ -6,7 +6,7 @@ import {
   PLATFORM_LOGGER,
   RUNTIME_CONFIG,
   RuntimeConfig,
-} from '@company/angular-platform-contract';
+} from '@company/shared-core';
 import feature from './register';
 
 /** Minimal stand-in for the shell so the remote can run on its own port. */

@@ -1,7 +1,7 @@
 /**
- * Controlled fallback UI (doc sections 6.1, 15.2, 17): remote load,
- * compatibility and registration failures must produce a recoverable,
- * user-readable error with a trace ID — never a blank page.
+ * Controlled fallback UI: provider load, compatibility and registration
+ * failures must produce a recoverable, user-readable error with a trace ID —
+ * never a blank page.
  *
  * Plain DOM on purpose: this must work even when Angular itself failed to load.
  */

@@ -1,11 +1,11 @@
-import type { PlatformLogger } from '@company/angular-platform-contract';
+import type { PlatformLogger } from '@company/shared-core';
 
 /**
- * Structured startup/telemetry events (doc section 15.3):
- * shell.start, shell.manifest.loaded, shell.remote.load.success, ...
+ * Structured startup/telemetry events: shell.start, shell.manifest.loaded,
+ * shell.remote.load.success, shell.feature.registered, ...
  *
- * The POC logs to the console and mirrors every event as a DOM CustomEvent
- * so the host page (or a real telemetry agent) can subscribe.
+ * Logs to the console and mirrors every event as a DOM CustomEvent so the
+ * host page — or the E2E specs — can subscribe.
  */
 export class ConsolePlatformLogger implements PlatformLogger {
   event(name: string, data?: Record<string, unknown>): void {

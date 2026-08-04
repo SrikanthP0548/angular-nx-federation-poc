@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { CurrencyPipe, DatePipe } from '@angular/common';
-import { BffErrorResponse, PLATFORM_LOGGER } from '@company/angular-platform-contract';
+import { BffErrorResponse, PLATFORM_LOGGER } from '@company/shared-core';
 import { PricingDataService } from '../pricing-data.service';
 import { PricingResponse } from '../pricing-models';
 

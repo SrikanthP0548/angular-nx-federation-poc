@@ -4,7 +4,9 @@
   "projectType": "application",
   "prefix": "app",
   "sourceRoot": "apps/shell/src",
-  "tags": ["scope:platform", "type:app"],
+  "tags": [
+    "type:shell"
+  ],
   "targets": {
     "build": {
       "executor": "@angular-architects/native-federation:build",
@@ -39,7 +41,9 @@
     },
     "esbuild": {
       "executor": "@angular/build:application",
-      "outputs": ["{options.outputPath}"],
+      "outputs": [
+        "{options.outputPath}"
+      ],
       "defaultConfiguration": "production",
       "options": {
         "outputPath": "dist/apps/shell",
@@ -52,8 +56,12 @@
             "input": "apps/shell/public"
           }
         ],
-        "styles": ["apps/shell/src/styles.scss"],
-        "polyfills": ["es-module-shims"]
+        "styles": [
+          "apps/shell/src/styles.scss"
+        ],
+        "polyfills": [
+          "es-module-shims"
+        ]
       },
       "configurations": {
         "production": {

@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { RUNTIME_CONFIG } from '@company/angular-platform-contract';
+import { RUNTIME_CONFIG } from '@company/shared-core';
 import { PricingResponse } from './pricing-models';
 
 /**

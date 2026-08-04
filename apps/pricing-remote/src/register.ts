@@ -12,7 +12,7 @@ import type {
   FederatedFeature,
   FeatureRegistrationContext,
   RegisteredFeature,
-} from '@company/angular-platform-contract';
+} from '@company/shared-core';
 import { PricingPage } from './app/pages/pricing-page';
 import { pricingProviders } from './feature-providers';
 
