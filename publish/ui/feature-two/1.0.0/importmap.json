@@ -1,0 +1,10 @@
+{
+  "imports": {
+    "@angular/core": "_angular_core.u9wtAbloYT.js",
+    "@angular/common": "_angular_common.Wd-mjO8X4Z.js",
+    "@angular/elements": "_angular_elements.ktmx-SsBF0.js",
+    "rxjs": "rxjs.S2aDxrE1W6.js",
+    "rxjs/operators": "rxjs_operators.CZzm_lzs1X.js",
+    "@nf-internal/chunk-HQKSIQVQ": "chunk-HQKSIQVQ.js"
+  }
+}

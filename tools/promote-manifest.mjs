@@ -1,21 +1,21 @@
 /**
- * Manifest promotion pipeline (doc sections 12.2 and 13.3).
+ * Points a logical feature key at a published artifact version.
  *
- *   node tools/promote-manifest.mjs pricing 1.4.2
+ *   node tools/promote-manifest.mjs pricing-search 1.1.0
  *
- * Points a logical feature key at a published artifact version. This is the
- * entire deployment action for a feature release — and the entire rollback
- * action too. No shell rebuild, no ASPX redeployment.
+ * This is the entire deployment action for a feature release — and the entire
+ * rollback action too. No shell rebuild, no host page redeployment.
  *
  * Validation before promotion:
- *   - the artifact exists at the immutable published path
+ *   - the artifact exists at its immutable published path
  *   - its checksums still match what was published
+ *   - it actually serves the element name this feature key expects
  *   - its contract version is compatible with the deployed shell
  *   - its Angular version matches the shell's
  *   - the previous version stays on disk for rollback
  *
- * Promotion is atomic: the new manifest is written to a temp file and
- * renamed over the live one, so no request ever reads a partial manifest.
+ * Promotion is atomic: the manifest is written to a temp file and renamed
+ * over the live one, so no request ever reads a partial manifest.
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -38,28 +38,54 @@ function fail(message) {
   process.exit(1);
 }
 
-const artifactDir = path.join(publishRoot, featureKey, version);
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+const existing = manifest.features[featureKey];
+if (!existing) {
+  fail(`feature key "${featureKey}" is not defined in the manifest`);
+}
+
+// One provider artifact can serve several feature keys, so the artifact
+// directory is not necessarily the feature key.
+const artifactName = existing.artifact ?? featureKey;
+const artifactDir = path.join(publishRoot, artifactName, version);
 if (!fs.existsSync(artifactDir)) {
-  fail(`no published artifact at ui/${featureKey}/${version}`);
+  fail(`no published artifact at ui/${artifactName}/${version}`);
 }
 
 const metadataPath = path.join(artifactDir, 'build-metadata.json');
 if (!fs.existsSync(metadataPath)) {
-  fail(`ui/${featureKey}/${version} has no build-metadata.json`);
+  fail(`ui/${artifactName}/${version} has no build-metadata.json`);
 }
 const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
 
-// Artifact integrity (doc section 12.2).
+// Artifact integrity.
 const checksums = JSON.parse(fs.readFileSync(path.join(artifactDir, 'checksums.json'), 'utf8'));
 for (const [relative, expected] of Object.entries(checksums)) {
-  if (relative === 'checksums.json') continue;
+  if (relative === 'checksums.json' || relative === 'build-metadata.json') continue;
   const actual = `sha256-${createHash('sha256').update(fs.readFileSync(path.join(artifactDir, relative))).digest('hex')}`;
   if (actual !== expected) {
     fail(`checksum mismatch for ${relative} — the published artifact was modified after publication`);
   }
 }
 
-// Compatibility gates (doc sections 4.3, 12.2).
+// The artifact must actually serve this feature. Without this check a
+// manifest/artifact mismatch surfaces in production as a blank page.
+const served = metadata.pages ?? [];
+const servedEntry = served.find((p) => p.featureKey === featureKey);
+if (!servedEntry) {
+  fail(
+    `${artifactName}@${version} does not serve feature "${featureKey}" ` +
+      `(serves: ${served.map((p) => p.featureKey).join(', ') || 'nothing'})`
+  );
+}
+if (servedEntry.elementName !== existing.elementName) {
+  fail(
+    `manifest expects element "${existing.elementName}" for "${featureKey}" ` +
+      `but ${artifactName}@${version} registers "${servedEntry.elementName}"`
+  );
+}
+
+// Compatibility gates.
 if (metadata.platformContract.split('.')[0] !== SHELL_CONTRACT_MAJOR) {
   fail(`contract ${metadata.platformContract} is incompatible with shell contract ${SHELL_CONTRACT_MAJOR}.x`);
 }
@@ -71,43 +97,34 @@ if (fs.existsSync(shellMetadataPath)) {
   const [remoteMajor, remoteMinor] = metadata.angularVersion.split('.');
   if (shellMajor !== remoteMajor || shellMinor !== remoteMinor) {
     fail(
-      `Angular ${metadata.angularVersion} in the remote does not match ${shellMetadata.angularVersion} in the deployed shell`
+      `Angular ${metadata.angularVersion} in the provider does not match ${shellMetadata.angularVersion} in the deployed shell`
     );
   }
 }
 
-// The remote's own federation metadata is the source of truth for how the
-// shell must load it.
 const remoteEntry = JSON.parse(fs.readFileSync(path.join(artifactDir, 'remoteEntry.json'), 'utf8'));
 const exposedKeys = remoteEntry.exposes.map((e) => e.key);
 if (!exposedKeys.includes(metadata.exposedModule)) {
-  fail(`remote does not expose ${metadata.exposedModule} (exposes: ${exposedKeys.join(', ')})`);
-}
-
-const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-const existing = manifest.features[featureKey];
-if (!existing) {
-  fail(`feature key "${featureKey}" is not defined in the manifest`);
+  fail(`provider does not expose ${metadata.exposedModule} (exposes: ${exposedKeys.join(', ')})`);
 }
 
 const previousVersion = existing.featureVersion;
-if (previousVersion !== version && !fs.existsSync(path.join(publishRoot, featureKey, previousVersion))) {
+if (previousVersion !== version && !fs.existsSync(path.join(publishRoot, artifactName, previousVersion))) {
   console.warn(`  warning: previous version ${previousVersion} is no longer on disk — rollback would fail`);
 }
 
 manifest.features[featureKey] = {
   ...existing,
   remoteName: metadata.remoteName,
-  remoteEntry: `/ui/${featureKey}/${version}/remoteEntry.json`,
+  remoteEntry: `/ui/${artifactName}/${version}/remoteEntry.json`,
   exposedModule: metadata.exposedModule,
   featureVersion: version,
   contractVersion: metadata.platformContract,
 };
 
-// Atomic promotion.
 const tempPath = `${manifestPath}.${process.pid}.tmp`;
 fs.writeFileSync(tempPath, JSON.stringify(manifest, null, 2) + '\n');
 fs.renameSync(tempPath, manifestPath);
 
-console.info(`promoted ${featureKey}: ${previousVersion} -> ${version}`);
+console.info(`promoted ${featureKey}: ${previousVersion} -> ${version} (artifact ${artifactName})`);
 console.info(`  rollback with: node tools/promote-manifest.mjs ${featureKey} ${previousVersion}`);

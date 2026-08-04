@@ -11,13 +11,25 @@
  * npm packages shared as singletons. `shareAll()` is deliberately not used:
  * it derives the list from package.json at build time, so the set of shared
  * framework packages could change without anyone editing a config.
+ *
+ * The trade-off is that secondary entry points must be enumerated. A shared
+ * bundle's own static imports have to resolve through the import map, and a
+ * missing one is not a build error — it surfaces at runtime as
+ * "Unable to resolve specifier". `@angular/common/http` is listed because the
+ * shared `@angular/platform-browser` bundle imports it for its transfer-cache
+ * code path, even in an app that never uses HttpClient.
  */
 export const SHARED_PACKAGES = Object.freeze([
   '@angular/core',
   '@angular/common',
+  '@angular/common/http',
   '@angular/platform-browser',
   '@angular/elements',
   'rxjs',
+  // Imported by the shared @angular/core, @angular/common/http and
+  // @angular/elements bundles. `includeSecondaries` does not pick it up for a
+  // non-Angular package, so it is listed explicitly.
+  'rxjs/operators',
 ]);
 
 /**
@@ -45,15 +57,28 @@ export const SHARED_PACKAGE_OPTIONS = Object.freeze({
   build: 'package',
 });
 
+/**
+ * Packages whose secondary entry points must all be shared.
+ *
+ * A shared bundle's own static imports resolve through the import map, so a
+ * secondary entry point that is pruned as "unused" still breaks at runtime if
+ * another shared bundle imports it — `@angular/platform-browser` imports
+ * `@angular/common/http`, and `@angular/core` imports `rxjs/operators`, in
+ * code paths this app never executes. Pruning is by usage in *app* code,
+ * which is the wrong question.
+ *
+ * tools/verify-bundle.mjs turns the resulting failure mode into a build gate
+ * by checking every bare specifier in the shared bundles against the import map.
+ */
+const KEEP_ALL_SECONDARIES = new Set(['@angular/core', '@angular/common', 'rxjs']);
+
 /** Builds the `shared` map for a `withNativeFederation` config. */
 export function sharedPackages() {
   return Object.fromEntries(
     SHARED_PACKAGES.map((name) => [
       name,
-      name === '@angular/core'
-        ? // Secondary entry points of @angular/core must all resolve to the
-          // same instance, so they are kept rather than pruned as unused.
-          { ...SHARED_PACKAGE_OPTIONS, includeSecondaries: { keepAll: true } }
+      KEEP_ALL_SECONDARIES.has(name)
+        ? { ...SHARED_PACKAGE_OPTIONS, includeSecondaries: { keepAll: true } }
         : { ...SHARED_PACKAGE_OPTIONS },
     ])
   );

@@ -1,0 +1,16 @@
+{
+  "artifact": "feature-three",
+  "version": "1.0.0",
+  "commit": "6c15a8c",
+  "builtAt": "2026-08-04T21:14:48.546Z",
+  "angularVersion": "22.0.8",
+  "platformContract": "1.x",
+  "remoteName": "feature-three",
+  "exposedModule": "./register",
+  "pages": [
+    {
+      "featureKey": "feature-three",
+      "elementName": "ca-feature-three"
+    }
+  ]
+}

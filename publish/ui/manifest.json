@@ -2,14 +2,45 @@
   "schemaVersion": "1.0",
   "environment": "local-integration",
   "shell": {
-    "version": "0.1.0"
+    "version": "1.0.0"
   },
   "features": {
-    "pricing": {
+    "pricing-search": {
+      "artifact": "pricing",
       "remoteName": "pricing",
       "remoteEntry": "/ui/pricing/1.0.0/remoteEntry.json",
       "exposedModule": "./register",
-      "elementName": "ca-pricing-page",
+      "elementName": "ca-pricing-search",
+      "featureVersion": "1.0.0",
+      "contractVersion": "1.x",
+      "enabled": true
+    },
+    "pricing-details": {
+      "artifact": "pricing",
+      "remoteName": "pricing",
+      "remoteEntry": "/ui/pricing/1.0.0/remoteEntry.json",
+      "exposedModule": "./register",
+      "elementName": "ca-pricing-details",
+      "featureVersion": "1.0.0",
+      "contractVersion": "1.x",
+      "enabled": true
+    },
+    "feature-two": {
+      "artifact": "feature-two",
+      "remoteName": "feature-two",
+      "remoteEntry": "/ui/feature-two/1.0.0/remoteEntry.json",
+      "exposedModule": "./register",
+      "elementName": "ca-feature-two",
+      "featureVersion": "1.0.0",
+      "contractVersion": "1.x",
+      "enabled": true
+    },
+    "feature-three": {
+      "artifact": "feature-three",
+      "remoteName": "feature-three",
+      "remoteEntry": "/ui/feature-three/1.0.0/remoteEntry.json",
+      "exposedModule": "./register",
+      "elementName": "ca-feature-three",
       "featureVersion": "1.0.0",
       "contractVersion": "1.x",
       "enabled": true

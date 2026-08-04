@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "artifact": "feature-two",
+  "remoteName": "feature-two",
+  "exposedModule": "./register",
+  "pages": [
+    { "featureKey": "feature-two", "elementName": "ca-feature-two" }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "$version": "v4",
+  "name": "feature-three",
+  "shared": [
+    {
+      "packageName": "@angular/core",
+      "outFileName": "_angular_core.u9wtAbloYT.js",
+      "requiredVersion": "auto",
+      "singleton": true,
+      "strictVersion": true,
+      "version": "22.0.8",
+      "bundle": "browser-angular_core"
+    },
+    {
+      "packageName": "@angular/common",
+      "outFileName": "_angular_common.Wd-mjO8X4Z.js",
+      "requiredVersion": "auto",
+      "singleton": true,
+      "strictVersion": true,
+      "version": "22.0.8",
+      "bundle": "browser-angular_common"
+    },
+    {
+      "packageName": "@angular/elements",
+      "outFileName": "_angular_elements.ktmx-SsBF0.js",
+      "requiredVersion": "auto",
+      "singleton": true,
+      "strictVersion": true,
+      "version": "22.0.8",
+      "bundle": "browser-angular_elements"
+    },
+    {
+      "packageName": "rxjs",
+      "outFileName": "rxjs.S2aDxrE1W6.js",
+      "requiredVersion": "auto",
+      "singleton": true,
+      "strictVersion": true,
+      "version": "7.8.2",
+      "bundle": "browser-rxjs"
+    },
+    {
+      "packageName": "rxjs/operators",
+      "outFileName": "rxjs_operators.CZzm_lzs1X.js",
+      "requiredVersion": "auto",
+      "singleton": true,
+      "strictVersion": true,
+      "version": "7.8.2",
+      "bundle": "browser-rxjs"
+    },
+    {
+      "packageName": "@company/shared-core",
+      "outFileName": "_company_shared_core-MHIHYMVS.js",
+      "requiredVersion": "~0.0.0",
+      "singleton": true,
+      "strictVersion": true,
+      "version": "0.0.0"
+    }
+  ],
+  "exposes": [
+    {
+      "key": "./register",
+      "outFileName": "register-7Z6I7LGG.js"
+    }
+  ],
+  "chunks": {
+    "browser-rxjs": [
+      "chunk-HQKSIQVQ.js"
+    ],
+    "mapping-or-exposed": [
+      "src-2UDHIMNW.js",
+      "chunk-DUTPQ56Q.js"
+    ]
+  }
+}

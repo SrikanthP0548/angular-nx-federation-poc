@@ -97,6 +97,26 @@
           "buildTarget": "feature-two-provider:esbuild:development"
         }
       }
+    },
+    "stamp": {
+      "executor": "nx:run-commands",
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false,
+      "options": {
+        "command": "node tools/stamp-build.mjs dist/apps/providers/feature-two-provider/browser"
+      }
+    },
+    "publish": {
+      "executor": "nx:run-commands",
+      "dependsOn": [
+        "stamp"
+      ],
+      "cache": false,
+      "options": {
+        "command": "node tools/publish-artifact.mjs feature-two \"$ARTIFACT_VERSION\""
+      }
     }
   }
 }
