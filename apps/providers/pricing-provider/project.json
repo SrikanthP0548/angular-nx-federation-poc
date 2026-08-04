@@ -1,12 +1,11 @@
 {
-  "name": "pricing-remote",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "pricing-provider",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "projectType": "application",
-  "prefix": "pricing",
-  "sourceRoot": "apps/pricing-remote/src",
+  "prefix": "app",
+  "sourceRoot": "apps/providers/pricing-provider/src",
   "tags": [
-    "scope:pricing",
-    "type:app"
+    "type:provider"
   ],
   "targets": {
     "build": {
@@ -17,25 +16,25 @@
       },
       "configurations": {
         "production": {
-          "target": "pricing-remote:esbuild:production"
+          "target": "pricing-provider:esbuild:production"
         },
         "development": {
-          "target": "pricing-remote:esbuild:development",
+          "target": "pricing-provider:esbuild:development",
           "dev": true
         }
       }
     },
     "serve": {
       "executor": "@angular-architects/native-federation:build",
-      "continuous": true,
       "options": {
-        "target": "pricing-remote:serve-original:development",
+        "target": "pricing-provider:serve-original:development",
         "rebuildDelay": 500,
         "cacheExternalArtifacts": true,
         "dev": true,
         "devServer": true,
         "port": 0
-      }
+      },
+      "continuous": true
     },
     "lint": {
       "executor": "@nx/eslint:lint"
@@ -47,18 +46,14 @@
       ],
       "defaultConfiguration": "production",
       "options": {
-        "outputPath": "dist/apps/pricing-remote",
-        "browser": "apps/pricing-remote/src/main.ts",
-        "tsConfig": "apps/pricing-remote/tsconfig.app.json",
-        "inlineStyleLanguage": "scss",
+        "outputPath": "dist/apps/providers/pricing-provider",
+        "browser": "apps/providers/pricing-provider/src/main.ts",
+        "tsConfig": "apps/providers/pricing-provider/tsconfig.app.json",
         "assets": [
           {
             "glob": "**/*",
-            "input": "apps/pricing-remote/public"
+            "input": "apps/providers/pricing-provider/public"
           }
-        ],
-        "styles": [
-          "apps/pricing-remote/src/styles.scss"
         ],
         "polyfills": [
           "es-module-shims"
@@ -96,10 +91,10 @@
       },
       "configurations": {
         "production": {
-          "buildTarget": "pricing-remote:esbuild:production"
+          "buildTarget": "pricing-provider:esbuild:production"
         },
         "development": {
-          "buildTarget": "pricing-remote:esbuild:development"
+          "buildTarget": "pricing-provider:esbuild:development"
         }
       }
     }
