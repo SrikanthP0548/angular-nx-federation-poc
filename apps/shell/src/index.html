@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Shell dev host (simulates ASPX output)</title>
+    <base href="/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+  </head>
+  <body>
+    <!--
+      Development stand-in for what Pricing.aspx + AngularHost.Master render
+      (doc section 8.2). The production-like host page lives in
+      legacy-host/Pricing.html and is served by the host server.
+    -->
+    <main
+      id="angular-page-host"
+      data-angular-feature="pricing"
+      data-manifest-url="/manifest.dev.json"
+    >
+      <ca-pricing-page customer-id="1001"></ca-pricing-page>
+    </main>
+
+    <script type="application/json" id="angular-bootstrap-context">
+      { "apiBaseUrl": "http://localhost:7040/api" }
+    </script>
+  </body>
+</html>

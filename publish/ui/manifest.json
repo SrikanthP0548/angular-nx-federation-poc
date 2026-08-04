@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0",
+  "environment": "local-integration",
+  "shell": {
+    "version": "0.1.0"
+  },
+  "features": {
+    "pricing": {
+      "remoteName": "pricing",
+      "remoteEntry": "/ui/pricing/1.0.0/remoteEntry.json",
+      "exposedModule": "./register",
+      "elementName": "ca-pricing-page",
+      "featureVersion": "1.0.0",
+      "contractVersion": "1.x",
+      "enabled": true
+    }
+  }
+}
