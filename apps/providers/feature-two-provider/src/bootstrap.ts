@@ -27,7 +27,7 @@ const elementName = requested && requested in PAGE_REGISTRY ? requested : 'ca-fe
 const manifestEntry: FeatureManifestEntry = {
   remoteName: 'feature-two',
   remoteEntry: './remoteEntry.json',
-  exposedModule: './register',
+  exposedModule: './feature-two',
   elementName,
   featureVersion: 'dev-standalone',
   contractVersion: '1.x',

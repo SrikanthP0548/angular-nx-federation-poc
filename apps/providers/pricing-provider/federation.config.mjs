@@ -5,9 +5,13 @@ export default withNativeFederation({
   // Logical remote name referenced by the runtime manifest.
   name: 'pricing',
 
-  // Only the registration adapter is exposed; page libraries stay private.
+  // One exposed key per page — the key itself becomes the published filename
+  // stem (e.g. pricing-search-<hash>.js), and each page becomes independently
+  // addressable by the manifest rather than dispatched-to internally. Page
+  // libraries themselves stay private; only these thin entry files are exposed.
   exposes: {
-    './register': './apps/providers/pricing-provider/src/register.ts',
+    './pricing-search': './apps/providers/pricing-provider/src/pricing-search.register.ts',
+    './pricing-details': './apps/providers/pricing-provider/src/pricing-details.register.ts',
   },
 
   shared: sharedPackages(),

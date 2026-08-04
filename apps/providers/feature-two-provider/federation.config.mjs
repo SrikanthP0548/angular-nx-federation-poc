@@ -5,9 +5,10 @@ export default withNativeFederation({
   // Logical remote name referenced by the runtime manifest.
   name: 'feature-two',
 
-  // Only the registration adapter is exposed; page libraries stay private.
+  // The exposes key becomes the published filename stem, so it's named after
+  // the page this provider hosts rather than generically.
   exposes: {
-    './register': './apps/providers/feature-two-provider/src/register.ts',
+    './feature-two': './apps/providers/feature-two-provider/src/register.ts',
   },
 
   shared: sharedPackages(),

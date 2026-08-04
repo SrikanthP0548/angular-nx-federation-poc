@@ -104,8 +104,8 @@ if (fs.existsSync(shellMetadataPath)) {
 
 const remoteEntry = JSON.parse(fs.readFileSync(path.join(artifactDir, 'remoteEntry.json'), 'utf8'));
 const exposedKeys = remoteEntry.exposes.map((e) => e.key);
-if (!exposedKeys.includes(metadata.exposedModule)) {
-  fail(`provider does not expose ${metadata.exposedModule} (exposes: ${exposedKeys.join(', ')})`);
+if (!exposedKeys.includes(servedEntry.exposedModule)) {
+  fail(`provider does not expose ${servedEntry.exposedModule} (exposes: ${exposedKeys.join(', ')})`);
 }
 
 const previousVersion = existing.featureVersion;
@@ -117,7 +117,7 @@ manifest.features[featureKey] = {
   ...existing,
   remoteName: metadata.remoteName,
   remoteEntry: `/ui/${artifactName}/${version}/remoteEntry.json`,
-  exposedModule: metadata.exposedModule,
+  exposedModule: servedEntry.exposedModule,
   featureVersion: version,
   contractVersion: metadata.platformContract,
 };

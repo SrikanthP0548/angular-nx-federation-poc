@@ -98,24 +98,43 @@ publish/ui/                  deployed asset tree; artifacts are build output
 
 ## The mechanisms that matter
 
-### The page registry is the late-binding seam
+### Per-page exposed keys are the late-binding seam
 
-```ts
-export const PAGE_REGISTRY = {
-  'ca-pricing-search':  () => import('@company/features/pricing-search'),
-  'ca-pricing-details': () => import('@company/features/pricing-details'),
-};
+Each page a provider hosts gets its own federation `exposes` entry, pointing at a thin
+registration file:
+
+```js
+// apps/providers/pricing-provider/federation.config.mjs
+exposes: {
+  './pricing-search':  './apps/providers/pricing-provider/src/pricing-search.register.ts',
+  './pricing-details': './apps/providers/pricing-provider/src/pricing-details.register.ts',
+},
 ```
 
-A feature library knows nothing about which provider ships it, so moving a page to a
-different deployment unit is one line here plus one manifest entry — the library does not
-move. That is what keeps page count from driving app count, and it is why page libraries
-are forbidden from importing each other (below): a page with no sibling coupling can be
-regrouped freely.
+```ts
+// pricing-search.register.ts
+export default createFederatedFeature({
+  'ca-pricing-search': async () => (await import('@company/features/pricing-search')).PRICING_SEARCH_PAGE,
+});
+```
 
-Each entry is a dynamic import. Measured on the built artifact: the search page chunk is
-4.5 KB, the details page chunk 4.1 KB, and the shared data-access chunk 1.4 KB is fetched
-by both. Loading one page never fetches the other's chunk.
+The `exposes` **key** — not the source file's name — drives the published filename, so the
+artifact carries self-descriptive files rather than a generic one: measured on the built
+1.1.0 artifact, `pricing-search-YHCQTVME.js` and `pricing-details-JBXPLBMM.js` are ~300-byte
+wrappers; the actual page code sits in its own lazy chunk (4.5 KB for search, 4.1 KB for
+details), and the shared data-access code (1.4 KB) is fetched once, from a chunk both pages'
+wrappers reference — esbuild builds every `exposes` entry for a provider in one invocation,
+so a dynamic import shared across two exposed entries is still deduplicated, not inlined
+twice. Loading one page never fetches the other's chunk.
+
+A feature library knows nothing about which provider ships it or which key exposes it, so
+regrouping which pages live in which provider doesn't touch the library — which is why page
+libraries are forbidden from importing each other (below): a page with no sibling coupling
+can be regrouped freely. Moving a page to a different provider is a contained, mechanical
+change, but no longer a one-liner: a new `exposes` entry (and provider, if a new one) at the
+destination, the `*.register.ts` file moved there, the `pages.json` entry moved from the old
+provider's descriptor to the new one, and the manifest's `remoteEntry`/`artifact`/
+`exposedModule` repointed.
 
 ### The manifest is the deployment control plane
 
@@ -154,7 +173,7 @@ resolve, across all four artifacts.
 
 ## Verified
 
-Run `npm test` (28 unit tests), `npm run lint:all`, and `npm run test:e2e` (25 specs).
+Run `npm test` (23 unit tests), `npm run lint:all`, and `npm run test:e2e` (27 specs).
 
 - **Nothing loads until a feature is requested.** The landing page downloads the shell and
   nothing else — no manifest fetch even, since the shell returns as soon as it finds no
@@ -179,16 +198,22 @@ Run `npm test` (28 unit tests), `npm run lint:all`, and `npm run test:e2e` (25 s
   page, and a page from the shell.
 - **Independent provider deployment**: publishing and promoting one provider leaves the
   others on their previous artifacts.
-- **Independent per-page promotion**: with `pricing-search` at 1.1.0 and `pricing-details`
-  at 1.0.0, each page fetched only from its own version path and rendered correctly;
-  rolling `pricing-search` back restored it.
+- **Independent per-page promotion**: `pricing-search` and `pricing-details` were promoted to
+  different versions of the `pricing` artifact — each page fetched only from its own version
+  path and rendered correctly, and rolling one back left the other untouched. Works because
+  the manifest tracks `featureVersion` per feature key, not per artifact.
+- **Per-page addressability at the network level**: the two pricing pages fetch different,
+  self-descriptively-named exposed entry files (`pricing-search-*.js` / `pricing-details-*.js`)
+  rather than funneling through one generic entry — and still share the same data-access
+  chunk, fetched once, proven by URL equality rather than tracer-string inference.
 
 ## Guarantees and their limits
 
 **Rollout and rollback are independent per page; builds are not.** The two pricing pages
 share one artifact, so changing the search page rebuilds the artifact containing the details
 page — the details page simply is not promoted. Splitting a page into its own provider later
-is one line in `page-registry.ts` plus a new app.
+is a contained, mechanical move — not a one-liner — covered above under "Per-page exposed
+keys are the late-binding seam."
 
 **The shell loads exactly one feature provider per document.** Two feature keys may point at
 different versions of the same remote across separate documents; they cannot coexist in one.

@@ -1,13 +1,26 @@
 import { createApplication } from '@angular/platform-browser';
 import { provideBrowserGlobalErrorListeners } from '@angular/core';
 import {
+  FederatedFeature,
   FeatureManifestEntry,
   PLATFORM_LOGGER,
   RUNTIME_CONFIG,
   RuntimeConfig,
 } from '@company/shared-core';
-import feature from './register';
-import { PAGE_REGISTRY } from './page-registry';
+
+/**
+ * Which page to preview and how to reach its registration module.
+ *
+ * This map exists only for the standalone dev harness — it is never published
+ * or federated, so it's fine for it to know about both entry files directly
+ * rather than going through the exposes map. Production code never imports
+ * both pricing-search.register and pricing-details.register from one bundle;
+ * this file legitimately does, for local development only.
+ */
+const PREVIEW_ENTRIES: Record<string, { exposedModule: string; load: () => Promise<{ default: FederatedFeature }> }> = {
+  'ca-pricing-search': { exposedModule: './pricing-search', load: () => import('./pricing-search.register') },
+  'ca-pricing-details': { exposedModule: './pricing-details', load: () => import('./pricing-details.register') },
+};
 
 /** Minimal stand-in for the shell so this provider can run on its own port. */
 const runtimeConfig: RuntimeConfig = {
@@ -20,30 +33,33 @@ const logger = {
   error: (name: string, error: unknown) => console.error(`[standalone] ${name}`, error),
 };
 
-// Which page to preview, so a provider serving several pages can preview each.
 const requested = new URLSearchParams(location.search).get('page');
-const elementName = requested && requested in PAGE_REGISTRY ? requested : 'ca-pricing-search';
+const elementName = requested && requested in PREVIEW_ENTRIES ? requested : 'ca-pricing-search';
+const entry = PREVIEW_ENTRIES[elementName];
 
 const manifestEntry: FeatureManifestEntry = {
   remoteName: 'pricing',
   remoteEntry: './remoteEntry.json',
-  exposedModule: './register',
+  exposedModule: entry.exposedModule,
   elementName,
   featureVersion: 'dev-standalone',
   contractVersion: '1.x',
   enabled: true,
 };
 
-createApplication({
-  providers: [
-    provideBrowserGlobalErrorListeners(),
-    { provide: RUNTIME_CONFIG, useValue: runtimeConfig },
-    { provide: PLATFORM_LOGGER, useValue: logger },
-  ],
-})
-  .then((appRef) => {
+Promise.all([
+  createApplication({
+    providers: [
+      provideBrowserGlobalErrorListeners(),
+      { provide: RUNTIME_CONFIG, useValue: runtimeConfig },
+      { provide: PLATFORM_LOGGER, useValue: logger },
+    ],
+  }),
+  entry.load(),
+])
+  .then(([appRef, module]) => {
     document.body.appendChild(document.createElement(elementName));
-    return feature.register({
+    return module.default.register({
       shellInjector: appRef.injector,
       runtimeConfig,
       feature: manifestEntry,

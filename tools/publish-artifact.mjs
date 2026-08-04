@@ -17,7 +17,6 @@ import { assertBuiltInThisRun, MARKER_FILE } from './build-marker.mjs';
 import {
   listProviderDirs,
   readDescriptor,
-  readRegistryKeys,
   validateAgainstRemoteEntry,
   validateDescriptor,
 } from './provider-descriptors.mjs';
@@ -79,13 +78,11 @@ const remoteEntry = fs.existsSync(remoteEntryPath)
   ? JSON.parse(fs.readFileSync(remoteEntryPath, 'utf8'))
   : null;
 
-// Providers must publish a descriptor consistent with their registry and with
-// the artifact the build actually produced.
+// Providers must publish a descriptor consistent with their federation config
+// and with the artifact the build actually produced.
 let pages = null;
 if (config.providerDir) {
-  const { descriptor, problems } = validateDescriptor(config.providerDir, {
-    registryKeys: readRegistryKeys(config.providerDir),
-  });
+  const { descriptor, problems } = validateDescriptor(config.providerDir);
   const artifactProblems = remoteEntry ? validateAgainstRemoteEntry(descriptor, remoteEntry) : ['no remoteEntry.json in build output'];
   const all = [...problems, ...artifactProblems];
   if (all.length > 0) {
@@ -132,7 +129,10 @@ const metadata = {
   angularVersion,
   platformContract: '1.x',
   ...(remoteEntry ? { remoteName: remoteEntry.name } : {}),
-  ...(pages ? { exposedModule: readDescriptor(config.providerDir).exposedModule, pages } : {}),
+  // No top-level exposedModule: a provider can expose more than one key now,
+  // so `pages[i].exposedModule` (already per-page from the descriptor) is the
+  // only place that value legitimately lives.
+  ...(pages ? { pages } : {}),
 };
 
 fs.writeFileSync(path.join(target, 'build-metadata.json'), JSON.stringify(metadata, null, 2));
