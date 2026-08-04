@@ -25,39 +25,74 @@ export default [
                     allow: [
                         "^.*/eslint(\\.base)?\\.config\\.[cm]?[jt]s$"
                     ],
-                    // Dependency boundary rules (doc section 3.3). These are
-                    // what stop "separate deployment" from drifting into
-                    // "separate framework ownership": a domain may use the
-                    // platform contract, but nothing may reach into another
-                    // domain's internals.
+                    // Dependency boundaries by ROLE, not by domain.
+                    //
+                    // There are deliberately no scope:* tags. Pages have no
+                    // settled domain grouping and are expected to move between
+                    // providers, so a scope tag would encode a decision we are
+                    // not making yet — and would be wrong (while silently
+                    // constraining imports) the moment a page moved.
+                    //
+                    // Two rules carry the weight:
+                    //
+                    //  - type:page cannot depend on type:page. Pages that
+                    //    cannot reach each other have no coupling to break
+                    //    when they are regrouped into different providers.
+                    //    Shared view code belongs in type:ui, shared data in
+                    //    type:data-access.
+                    //
+                    //  - type:shell cannot depend on type:page. The shell is a
+                    //    composition layer and must contain no page-specific
+                    //    logic; only providers may reference pages.
+                    //
+                    // Ownership tracking, if wanted, belongs on owner:* tags
+                    // with no matching rule here — Nx leaves unmatched tags
+                    // unconstrained, so they stay pure metadata.
                     depConstraints: [
                         {
-                            sourceTag: "scope:pricing",
+                            sourceTag: "type:shell",
                             onlyDependOnLibsWithTags: [
-                                "scope:pricing",
-                                "scope:shared",
-                                "type:contract"
+                                "type:shared-core",
+                                "type:util"
                             ]
                         },
                         {
-                            sourceTag: "scope:platform",
+                            sourceTag: "type:provider",
                             onlyDependOnLibsWithTags: [
-                                "scope:platform",
-                                "scope:shared",
-                                "type:contract"
+                                "type:page",
+                                "type:data-access",
+                                "type:shared-core",
+                                "type:ui",
+                                "type:util"
                             ]
                         },
                         {
-                            // The contract is the root of the dependency
-                            // graph and must depend on nothing else.
-                            sourceTag: "type:contract",
-                            onlyDependOnLibsWithTags: []
+                            sourceTag: "type:page",
+                            onlyDependOnLibsWithTags: [
+                                "type:data-access",
+                                "type:shared-core",
+                                "type:ui",
+                                "type:util"
+                            ]
                         },
                         {
-                            sourceTag: "scope:shared",
+                            sourceTag: "type:data-access",
                             onlyDependOnLibsWithTags: [
-                                "scope:shared",
-                                "type:contract"
+                                "type:shared-core",
+                                "type:util"
+                            ]
+                        },
+                        {
+                            // The root of the dependency graph.
+                            sourceTag: "type:shared-core",
+                            onlyDependOnLibsWithTags: [
+                                "type:util"
+                            ]
+                        },
+                        {
+                            sourceTag: "type:util",
+                            onlyDependOnLibsWithTags: [
+                                "type:util"
                             ]
                         }
                     ]

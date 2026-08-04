@@ -1,101 +1,182 @@
 /**
- * Bundle inspection gate (doc sections 6.4, 10.4 and 15.2).
+ * Federation build gate.
  *
- *   node tools/verify-bundle.mjs dist/apps/pricing-remote/browser
+ *   node tools/verify-bundle.mjs                       # every built artifact
+ *   node tools/verify-bundle.mjs dist/apps/shell/browser
  *
- * The single most important build gate in this architecture: a remote that
- * silently ships its own Angular runtime still *works*, so nothing fails
- * until two Angular copies are live in one page and injection, change
- * detection or element registration break in ways that are very hard to
- * diagnose. This check must run in every remote pipeline.
+ * Three failures this catches, all of which produce a clean build and break
+ * only at runtime:
+ *
+ *  1. A workspace library silently shared as a singleton. Native Federation
+ *     shares every tsconfig.base.json path entry unless `sharedMappings` is
+ *     set, so a new feature library becomes a strict-version singleton pinned
+ *     to the root package version without anyone editing a config.
+ *
+ *  2. shared-core NOT shared. Its InjectionTokens are compared by identity, so
+ *     a second copy makes every inject() of them throw NullInjectorError at
+ *     first render. This is the more dangerous direction, and asserting the
+ *     absence of (1) does not catch it.
+ *
+ *  3. A bare specifier with no import-map entry. A shared bundle's own static
+ *     imports must resolve through the map, and pruning is by usage in app
+ *     code — the wrong question. @angular/platform-browser imports
+ *     @angular/common/http, and @angular/core imports rxjs/operators, in
+ *     paths this app never executes.
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { SHARED_MAPPINGS } from './federation-sharing.mjs';
 
-const distDir = process.argv[2];
-if (!distDir) {
-  console.error('usage: node tools/verify-bundle.mjs <dist-browser-dir>');
-  process.exit(1);
+const repoRoot = path.resolve(import.meta.dirname, '..');
+
+/** Bare specifiers imported or re-exported by a module. */
+const IMPORT_SOURCE = /(?:^|[\s;])(?:import|export)[^'"]*?from\s*["']([^"']+)["']/gm;
+
+function tsconfigPathKeys() {
+  const tsconfig = JSON.parse(fs.readFileSync(path.join(repoRoot, 'tsconfig.base.json'), 'utf8'));
+  return new Set(Object.keys(tsconfig.compilerOptions?.paths ?? {}));
 }
 
-const remoteEntryPath = path.join(distDir, 'remoteEntry.json');
-if (!fs.existsSync(remoteEntryPath)) {
-  console.error(`no remoteEntry.json in ${distDir} — is this a federated remote build?`);
-  process.exit(1);
+function discoverArtifacts() {
+  const roots = [path.join(repoRoot, 'dist/apps/shell'), ...globProviderDists()];
+  return roots.map((r) => path.join(r, 'browser')).filter((d) => fs.existsSync(path.join(d, 'remoteEntry.json')));
 }
 
-const remoteEntry = JSON.parse(fs.readFileSync(remoteEntryPath, 'utf8'));
-const failures = [];
-
-const REQUIRED_SINGLETONS = ['@angular/core', '@angular/common', '@angular/elements', 'rxjs'];
-const shared = new Map(remoteEntry.shared.map((s) => [s.packageName, s]));
-
-for (const pkg of REQUIRED_SINGLETONS) {
-  const entry = shared.get(pkg);
-  if (!entry) {
-    failures.push(`${pkg} is not declared as a shared dependency — it would be bundled into the remote`);
-    continue;
-  }
-  if (!entry.singleton) {
-    failures.push(`${pkg} is shared but not singleton — a second instance could load at runtime`);
-  }
-  if (!entry.strictVersion) {
-    failures.push(`${pkg} is shared without strictVersion — a version mismatch would fail silently`);
-  }
+function globProviderDists() {
+  const providersDist = path.join(repoRoot, 'dist/apps/providers');
+  if (!fs.existsSync(providersDist)) return [];
+  return fs
+    .readdirSync(providersDist, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => path.join(providersDist, e.name));
 }
 
-// Every chunk of the remote's own code must reach Angular through a bare
-// specifier, which the import map resolves to the single shared instance.
-// A relative import of an Angular package is the signature of a private
-// copy bundled into the remote — the exact thing that puts two Angular
-// runtimes in one page.
-//
-// Searching for `ɵɵ`-prefixed symbols does NOT work here: a remote's own
-// components legitimately emit `ɵɵdefineComponent` as AOT output, so that
-// test flags every healthy build.
-const sharedFiles = new Set(remoteEntry.shared.map((s) => s.outFileName));
-const ANGULAR_PACKAGE = /^(@angular\/[\w-]+|rxjs)(\/.*)?$/;
-const IMPORT_SOURCE = /(?:^|\s)(?:import|export)[^'"]*?from\s*["']([^"']+)["']/gm;
+/**
+ * The shell's import map, which is installed first and therefore resolves
+ * specifiers for every provider loaded into the document. A provider's own
+ * map is only the delta it contributes, so checking a provider against its
+ * own map alone reports specifiers that resolve perfectly well at runtime.
+ */
+function readShellImports() {
+  const shellMap = path.join(repoRoot, 'dist/apps/shell/browser/importmap.json');
+  if (!fs.existsSync(shellMap)) return new Set();
+  return new Set(Object.keys(JSON.parse(fs.readFileSync(shellMap, 'utf8')).imports ?? {}));
+}
 
-for (const entry of fs.readdirSync(distDir, { withFileTypes: true })) {
-  if (!entry.isFile() || !entry.name.endsWith('.js')) continue;
-  if (sharedFiles.has(entry.name)) continue;
-  if (entry.name === 'polyfills.js') continue;
+function verifyArtifact(distDir, workspacePathKeys, shellImports) {
+  const failures = [];
+  const remoteEntry = JSON.parse(fs.readFileSync(path.join(distDir, 'remoteEntry.json'), 'utf8'));
+  const shared = new Map(remoteEntry.shared.map((s) => [s.packageName, s]));
 
-  const content = fs.readFileSync(path.join(distDir, entry.name), 'utf8');
-  for (const [, source] of content.matchAll(IMPORT_SOURCE)) {
-    // A relative import that resolves into one of the shared out-files means
-    // the chunk bypassed the import map and pinned a private copy.
-    if (source.startsWith('.') && sharedFiles.has(path.basename(source))) {
+  // An npm external always carries the bundle-group name; a workspace mapping
+  // never does. That is the definitive classifier.
+  const mappings = remoteEntry.shared.filter((s) => !('bundle' in s)).map((s) => s.packageName);
+
+  // (1) No workspace library shared unless allowlisted.
+  for (const name of mappings) {
+    if (!SHARED_MAPPINGS.includes(name)) {
       failures.push(
-        `${entry.name} imports "${source}" relatively — it must import the bare specifier so the shared instance is used`
+        `workspace library "${name}" appears in remoteEntry.shared. Native Federation shares every ` +
+          `tsconfig.base.json path entry unless sharedMappings is set — add it to tools/federation-sharing.mjs ` +
+          `only if it must be a cross-artifact singleton, otherwise the allowlist is out of sync with the configs.`
       );
     }
   }
+  // Belt and braces: a path key that reached `shared` some other way.
+  for (const name of workspacePathKeys) {
+    if (shared.has(name) && !SHARED_MAPPINGS.includes(name)) {
+      failures.push(`workspace path "${name}" is shared but not allowlisted`);
+    }
+  }
+
+  // (2) Every allowlisted mapping present and a strict singleton.
+  for (const name of SHARED_MAPPINGS) {
+    const entry = shared.get(name);
+    if (!entry) {
+      failures.push(
+        `"${name}" is NOT shared by this artifact — it therefore carries a private copy, so its ` +
+          `InjectionToken instances differ from the shell's and every inject() of them will throw ` +
+          `NullInjectorError at first render.`
+      );
+      continue;
+    }
+    if (!entry.singleton) failures.push(`"${name}" is shared but not singleton — a second instance could load`);
+    if (!entry.strictVersion) failures.push(`"${name}" is shared without strictVersion — a mismatch would fail silently`);
+  }
+
+  // Framework packages that are present must be strict singletons. Presence
+  // itself is not required: an artifact that never touches @angular/forms
+  // legitimately does not share it.
+  for (const entry of remoteEntry.shared) {
+    if (!('bundle' in entry)) continue;
+    if (!entry.singleton) failures.push(`"${entry.packageName}" is shared but not singleton`);
+    if (!entry.strictVersion) failures.push(`"${entry.packageName}" is shared without strictVersion`);
+  }
+
+  // (3) Every bare specifier resolvable through the import map.
+  const importMapPath = path.join(distDir, 'importmap.json');
+  if (fs.existsSync(importMapPath)) {
+    const importMap = JSON.parse(fs.readFileSync(importMapPath, 'utf8'));
+    // Workspace mappings are registered at runtime from remoteEntry.json
+    // rather than appearing in importmap.json, so they resolve too.
+    const resolvable = new Set([
+      ...Object.keys(importMap.imports ?? {}),
+      ...shellImports,
+      ...mappings,
+      ...SHARED_MAPPINGS,
+    ]);
+
+    for (const file of fs.readdirSync(distDir)) {
+      if (!file.endsWith('.js')) continue;
+      const content = fs.readFileSync(path.join(distDir, file), 'utf8');
+      for (const [, specifier] of content.matchAll(IMPORT_SOURCE)) {
+        if (specifier.startsWith('.') || specifier.startsWith('/') || specifier.startsWith('http')) continue;
+        // Skip specifiers built from template literals — those are runtime
+        // constructions, not static bare specifiers.
+        if (specifier.includes('${')) continue;
+        // Native Federation's own chunk aliases are registered at load time
+        // from remoteEntry.json, never from importmap.json.
+        if (specifier.startsWith('@nf-internal/')) continue;
+        if (!resolvable.has(specifier)) {
+          failures.push(
+            `${file} imports "${specifier}" but nothing in the import map resolves it — ` +
+              `add it to SHARED_PACKAGES in tools/federation-sharing.mjs. ` +
+              `This fails at runtime with "Unable to resolve specifier", not at build time.`
+          );
+        }
+      }
+    }
+  }
+
+  return { name: remoteEntry.name ?? path.basename(distDir), failures: [...new Set(failures)] };
 }
 
-// Every Angular package the remote's code imports by bare specifier has to
-// be declared shared, or the import map has nothing to resolve it to.
-const importedAngularPackages = new Set();
-for (const entry of fs.readdirSync(distDir, { withFileTypes: true })) {
-  if (!entry.isFile() || !entry.name.endsWith('.js') || sharedFiles.has(entry.name)) continue;
-  const content = fs.readFileSync(path.join(distDir, entry.name), 'utf8');
-  for (const [, source] of content.matchAll(IMPORT_SOURCE)) {
-    if (ANGULAR_PACKAGE.test(source)) importedAngularPackages.add(source);
-  }
-}
-for (const pkg of importedAngularPackages) {
-  if (!shared.has(pkg)) {
-    failures.push(`${pkg} is imported by remote code but is not declared shared — it would resolve to a private copy`);
-  }
-}
+const explicit = process.argv[2];
+const artifacts = explicit ? [path.resolve(repoRoot, explicit)] : discoverArtifacts();
 
-if (failures.length > 0) {
-  console.error('bundle verification FAILED:');
-  for (const failure of failures) console.error(`  - ${failure}`);
+if (artifacts.length === 0) {
+  console.error('no built federation artifacts found — run the build first');
   process.exit(1);
 }
 
-console.info(`bundle verification passed for ${remoteEntry.name}`);
-console.info(`  shared singletons: ${REQUIRED_SINGLETONS.join(', ')}`);
-console.info(`  exposes: ${remoteEntry.exposes.map((e) => e.key).join(', ')}`);
+const workspacePathKeys = tsconfigPathKeys();
+const shellImports = readShellImports();
+let failed = false;
+
+for (const distDir of artifacts) {
+  if (!fs.existsSync(path.join(distDir, 'remoteEntry.json'))) {
+    console.error(`no remoteEntry.json in ${distDir} — is this a federated build?`);
+    failed = true;
+    continue;
+  }
+  const { name, failures } = verifyArtifact(distDir, workspacePathKeys, shellImports);
+  if (failures.length > 0) {
+    failed = true;
+    console.error(`FAILED ${name} (${path.relative(repoRoot, distDir)}):`);
+    for (const failure of failures) console.error(`  - ${failure}`);
+  } else {
+    console.info(`ok ${name} — shared mappings: ${SHARED_MAPPINGS.join(', ')}`);
+  }
+}
+
+process.exit(failed ? 1 : 0);
