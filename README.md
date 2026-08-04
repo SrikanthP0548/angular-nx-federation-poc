@@ -1,26 +1,29 @@
-# Angular Shell + Federated Feature Builds — Proof of Concept
+# Angular Shell + Federated Feature Providers — Proof of Concept
 
-A working reference implementation of the "Angular Shell + Federated Feature Builds"
-plan: incrementally migrating classic ASP pages to Angular, where each migrated page
-gets a thin ASPX host that loads one shared Angular shell, and the shell dynamically
-loads a domain feature build that registers the page as a custom element.
+A working reference implementation of the incremental-migration architecture: a thin
+Angular shell, loaded by an ordinary host page, dynamically loads a feature provider that
+registers the page as a custom element. Feature versions are routed by a runtime manifest.
 
-This POC covers the plan's **foundation release** (section 16.1) and **pilot page**
-(section 16.2). It exists to prove the four claims the architecture stands or falls on:
+The question this exists to answer is **whether migrating 150 pages means building 150
+applications.** It does not:
 
-| Claim | How this POC proves it |
-|---|---|
-| A remote loads without bundling its own Angular runtime | Network trace shows Angular fetched once, from the shell |
-| A feature deploys without rebuilding the shell or ASPX | `publish` + `promote` scripts; host page never changes |
-| Rollback is a manifest pointer change | `promote-manifest.mjs <feature> <previous-version>` |
-| Incompatible remotes are rejected before rendering | Shell refuses a `2.x` contract with no request to the remote |
+| | Role | Count here | Count for 150 pages |
+|---|---|---|---|
+| **Feature library** | implementation unit — one per page | 4 | ~150 |
+| **Provider app** | deployment unit — produces `remoteEntry.json` | 3 | ~8–15 |
+| **Shell** | runtime owner and composition layer | 1 | 1 |
+| **Manifest entry** | rollout and rollback unit | 4 | ~150 |
 
-Federation uses **Native Federation** (esbuild-based) rather than the webpack-based Nx
-Module Federation named in the source document — see [Deviations](#deviations-from-the-document).
+Pages are libraries. Apps exist only where something must be deployed independently. The
+`pricing-provider` demonstrates this directly: it serves **two** pages from one artifact,
+and loading one never downloads the other.
 
 ## Prerequisites
 
-Node 22+. No .NET or IIS required (see [Deviations](#deviations-from-the-document)).
+Node 22+. Chrome for the E2E suite. Edge is configured but **not installed on this
+machine** — `npx playwright install msedge` adds it, after which `npm run test:e2e:all`
+covers both browsers. `npm run test:e2e` runs Chrome only, so the default suite is green
+without that install rather than silently falling back to Chromium.
 
 ```bash
 npm install
@@ -28,185 +31,201 @@ npm install
 
 ## Run it
 
-Build and publish the artifacts, then start the servers:
-
 ```bash
-npm run build:all && node tools/publish-artifact.mjs shell 0.1.0 && node tools/publish-artifact.mjs pricing 1.0.0
+ARTIFACT_VERSION=1.0.0 npm run release
 ```
 
 ```bash
-node apps/bff/main.js
+node tools/promote-manifest.mjs pricing-search 1.0.0 && node tools/promote-manifest.mjs pricing-details 1.0.0 && node tools/promote-manifest.mjs feature-two 1.0.0 && node tools/promote-manifest.mjs feature-three 1.0.0
 ```
 
 ```bash
-node legacy-host/server.js
+npm run start:host
 ```
 
-Then open the migrated page:
+Then open http://localhost:44300/pricing-search.html?customerId=1001 — the other three
+pages are linked from the header. The console shows the startup telemetry: `shell.start`
+→ `shell.manifest.loaded` → `shell.remote.load.success` → `feature.register.completed` →
+`feature.page.ready`.
 
-```bash
-open http://localhost:44300/Pricing.aspx?customerId=1001
-```
+## What happens when a page loads
 
-You should see a pricing table rendered inside legacy page chrome. Open the console to
-watch the startup telemetry: `shell.start` → `shell.manifest.loaded` →
-`shell.remote.load.success` → `shell.feature.registered` → `feature.page.ready`.
-
-For iterative development with live reload, `npm start` runs the shell (4200), the
-pricing remote (4201) and the BFF (7040) together.
-
-## What happens when that page loads
-
-1. The browser requests `/Pricing.aspx`, which returns static HTML — the legacy app
-   renders the `<ca-pricing-page>` tag, a `data-angular-feature="pricing"` marker and a
-   non-sensitive bootstrap JSON block. It names no version and no remote URL.
-2. `AngularHost.Master`'s single script reference loads the shell from
-   `/ui/shell/current/main.js`.
-3. The shell reads the feature key, fetches `/ui/manifest.json`, and validates the entry
-   — including rejecting an incompatible contract version before any remote is contacted.
-4. The shell initializes Native Federation for the one selected remote, then creates a
-   single Angular application environment (no root component).
-5. The shell loads the remote's `./register` module and calls `register()`, passing its
-   own injector.
-6. The remote creates a child `EnvironmentInjector` and defines `<ca-pricing-page>`. The
-   browser upgrades the tag already in the document.
-7. The page calls the BFF, which calls the (mocked) COM Bridge, maps XML to JSON, and
-   returns the page contract.
+1. The host returns static HTML naming a feature key (`data-angular-feature`) and a custom
+   element tag. It names **no version and no provider URL**.
+2. One stable script reference loads the shell from `/ui/shell/current/main.js`.
+3. The shell fetches `/ui/manifest.json`, validates the entry, and rejects an incompatible
+   contract version before contacting the provider.
+4. It initialises Native Federation for that one provider and creates a single Angular
+   environment — no root component.
+5. It loads the provider's `./register` module and calls it with its own injector.
+6. The provider looks the element name up in its page registry, **dynamically imports only
+   that page**, creates a child `EnvironmentInjector`, and defines the custom element.
+7. The browser upgrades the tag already in the document.
 
 ## Layout
 
 ```
 apps/
-  shell/                 Dynamic federation host. Loader, manifest handling,
-                         compatibility gate, telemetry, fallback UI.
-  pricing-remote/        Pilot domain remote. Exposes only ./register.
-  bff/                   Mock BFF: COM Bridge simulation, XML→JSON mapping,
-                         stable error contract.
-libs/platform/contract/  The only compile-time contract shared between
-                         shell and remotes.
-legacy-host/
-  server.js              Stands in for IIS: same-origin /ui, /api, page routes.
-  pages/Pricing.html     The rendered output of Pricing.aspx.
-  reference/             The real ASPX artifacts (.Master, .aspx, .aspx.cs).
+  shell/                     dynamic host: manifest handling, compatibility gate,
+                             telemetry, fallback UI
+  providers/                 deployment units — federation config, page registry,
+    pricing-provider/          register adapter, pages.json. No feature code.
+    feature-two-provider/
+    feature-three-provider/
+  host-e2e/                  architecture tests against published artifacts
+libs/
+  features/                  one library per page
+    pricing-search/            \ both deployed by pricing-provider
+    pricing-details/           /
+    feature-two/
+    feature-three/
+  data-access/pricing/       shared by both pricing pages
+  shared/core/               the contract, the tokens, and createFederatedFeature
 tools/
-  publish-artifact.mjs   Publish to an immutable versioned path + metadata.
-  promote-manifest.mjs   Validate and atomically promote a feature version.
-  verify-bundle.mjs      Build gate: no duplicated Angular runtime.
-publish/ui/              The deployed asset tree. Artifacts are build output
-                         (git-ignored); manifest.json is tracked.
+  federation-sharing.mjs     the single definition of what is shared
+  publish-artifact.mjs       immutable publish + metadata + checksums
+  promote-manifest.mjs       validated, atomic promotion
+  verify-bundle.mjs          federation build gate
+  host-simulator/            static host serving /ui and one page per feature
+publish/ui/                  deployed asset tree; artifacts are build output
+                             (git-ignored), manifest.json is tracked
 ```
 
-## The two mechanisms worth understanding
+## The mechanisms that matter
 
-### The runtime manifest is the deployment control plane
+### The page registry is the late-binding seam
 
-`publish/ui/manifest.json` maps a logical feature key to a specific published version:
-
-```json
-"pricing": {
-  "remoteEntry": "/ui/pricing/1.0.0/remoteEntry.json",
-  "elementName": "ca-pricing-page",
-  "contractVersion": "1.x",
-  "enabled": true
-}
+```ts
+export const PAGE_REGISTRY = {
+  'ca-pricing-search':  () => import('@company/features/pricing-search'),
+  'ca-pricing-details': () => import('@company/features/pricing-details'),
+};
 ```
 
-Nothing else in the system names a feature version — not the shell build, not the ASPX
-page. Releasing and rolling back are the same operation against this file:
+A feature library knows nothing about which provider ships it, so moving a page to a
+different deployment unit is one line here plus one manifest entry — the library does not
+move. That is what keeps page count from driving app count, and it is why page libraries
+are forbidden from importing each other (below): a page with no sibling coupling can be
+regrouped freely.
+
+Each entry is a dynamic import. Measured on the built artifact: the search page chunk is
+4.5 KB, the details page chunk 4.1 KB, and the shared data-access chunk 1.4 KB is fetched
+by both. Loading one page never fetches the other's chunk.
+
+### The manifest is the deployment control plane
+
+Nothing else names a feature version — not the shell build, not the host page. Releasing
+and rolling back are the same operation:
 
 ```bash
-node tools/promote-manifest.mjs pricing 1.1.0
+node tools/promote-manifest.mjs pricing-search 1.1.0
 ```
 
-Promotion is refused unless the artifact exists at its immutable path, its checksums
-still match, its contract major matches the shell's, and its Angular version matches the
-deployed shell's. The write itself is a temp-file rename, so no request ever reads a
-partial manifest.
+Promotion is refused unless the artifact exists at its immutable path, its checksums still
+match, it actually serves that feature key and element name, its contract major matches the
+shell's, and its Angular version matches the deployed shell's. The write is a temp-file
+rename, so no request ever reads a partial manifest.
 
-### One Angular runtime, enforced by a build gate
+Because `artifact` decouples the feature key from the published directory, two feature keys
+can point at **different versions of the same provider artifact** — demonstrated below.
 
-A remote that ships its own Angular still *works* in isolation, so this failure is
-invisible until two runtimes are live in one page and DI or change detection breaks in
-ways that are painful to diagnose. `tools/verify-bundle.mjs` is the gate:
+### One Angular runtime, enforced
 
-```bash
-node tools/verify-bundle.mjs dist/apps/pricing-remote/browser
-```
+Sharing is one list in `tools/federation-sharing.mjs`, consumed by the shell config, all
+three provider configs and the verify gate — five consumers, one definition, so a one-sided
+allowlist is impossible.
 
-It checks that Angular and RxJS are declared shared/singleton/strictVersion, that no
-chunk imports a shared package by relative path (bypassing the import map), and that
-every Angular package the remote imports is actually declared shared.
+Two failure directions, both invisible at build time:
 
-Verified at runtime: loading the page fetches `@angular/core`, `@angular/common`,
-`@angular/common/http` and `@angular/platform-browser` exactly once each, all from
-`/ui/shell/current/`. The remote contributes only `@angular/elements`, which the shell
-does not use.
+- **A workspace library silently shared.** Native Federation shares *every*
+  `tsconfig.base.json` path entry unless `sharedMappings` is set. Without the allowlist all
+  four workspace libraries become strict-version singletons pinned to `0.0.0`.
+- **`shared-core` *not* shared.** Its `InjectionToken`s are compared by identity, so a
+  second copy makes every `inject(RUNTIME_CONFIG)` in a provider throw `NullInjectorError`
+  at first render — from a completely clean build.
+
+`node tools/verify-bundle.mjs` fails on both, plus any bare specifier the import map cannot
+resolve, across all four artifacts.
+
+## Verified
+
+Run `npm test` (28 unit tests), `npm run lint:all`, and `npm run test:e2e` (20 specs).
+
+- **One runtime, cold cache.** Every framework file is fetched from `/ui/shell/current/`,
+  never a provider path, on all four pages — asserted per file, since Angular legitimately
+  ships several secondary entry points.
+- **Lazy per-page loading, by response body.** Federation chunks are content-hashed
+  anonymous names, so filenames prove nothing; each page's unique tracer string must be
+  absent from every chunk the sibling page downloads.
+- **Failure paths** produce the fallback with a trace ID, never a blank page: unknown
+  feature key, disabled feature, incompatible contract (asserted to make *no* provider
+  request), unreachable provider, unsupported schema, and a foreign custom-element
+  collision.
+- **Registration lifecycle** (10 tests): concurrent calls share one promise, a rejection is
+  evicted so retry works, a foreign tag is a collision, the injector is destroyed only on
+  the pre-commit path, and a logger that throws *after* `define()` cannot undo a committed
+  registration. Each was confirmed to fail when its rule is removed.
+- **Dependency boundaries** fire — verified by temporarily importing a page from another
+  page, and a page from the shell.
+- **Independent provider deployment**: publishing and promoting one provider leaves the
+  others on their previous artifacts.
+- **Independent per-page promotion**: with `pricing-search` at 1.1.0 and `pricing-details`
+  at 1.0.0, each page fetched only from its own version path and rendered correctly;
+  rolling `pricing-search` back restored it.
+
+## Guarantees and their limits
+
+**Rollout and rollback are independent per page; builds are not.** The two pricing pages
+share one artifact, so changing the search page rebuilds the artifact containing the details
+page — the details page simply is not promoted. Splitting a page into its own provider later
+is one line in `page-registry.ts` plus a new app.
+
+**The shell loads exactly one feature provider per document.** Two feature keys may point at
+different versions of the same remote across separate documents; they cannot coexist in one.
+
+**Provider artifacts do contain Native Federation fallback bundles of Angular.** That is by
+design and cannot be suppressed — there is no `import: false` equivalent, and using `skip`
+is worse because the package stops being shared and gets inlined. The enforceable guarantee
+is the runtime one: negotiation resolves every framework and shared-core package to the
+shell-owned copy, asserted by cold-browser tests.
+
+**Publishing requires a build in the same execution.** `BUILD_RUN_ID` is required rather
+than defaulted, because a per-process fallback would match only itself. Verified to fail
+closed on a missing marker, a marker from another run, and no id at all. This matters: while
+verifying the bundle gate, a broken config made a build fail, the old `dist/` survived, and
+the gate passed against the stale artifact.
 
 ## Two integration details that are easy to get wrong
 
-**The host page must use `type="module-shim"`.** Native Federation installs the
-shared-dependency import map at runtime through es-module-shims. A plain
-`<script type="module">` bypasses the shim and every bare Angular specifier fails to
-resolve. `AngularHost.Master` emits the `esms-options` block, the polyfill, and the
-shim-typed shell reference.
+**The host page must load the shell as `type="module-shim"`.** Native Federation installs
+the shared-dependency import map through es-module-shims; a plain `type="module"` bypasses
+the shim and every bare Angular specifier fails to resolve. The host pages emit the
+`esms-options` block, the polyfill, and the shim-typed reference.
 
-**The shell resolves its own federation metadata from its asset URL, not the document.**
-The shell lives at `/ui/shell/current/` but is hosted by pages at arbitrary paths, so it
-derives its base from `import.meta.url`. Resolving against the host document looks for
-`remoteEntry.json` next to `/Pricing.aspx` and fails.
+**The shell resolves its own federation metadata from `import.meta.url`,** not the document.
+It lives at `/ui/shell/current/` but is hosted by pages at arbitrary paths, so resolving
+against the document looks for `remoteEntry.json` next to the host page and fails.
 
-Relatedly, `apps/shell/src/main.ts` must not import the contract package as a *value* —
-it runs before the import map exists. It re-declares the contract major locally, and
+Related: `apps/shell/src/main.ts` must not import `shared-core` as a *value* — it runs before
+the import map exists. It re-declares the contract major locally, and
 `tools/contract-consistency.test.mjs` enforces that the duplicate stays in sync.
 
-## Tests
+## Deviations and scope
 
-```bash
-npm test
-```
+**Native Federation instead of webpack Module Federation.** esbuild-based, matching where the
+Angular CLI has moved. Metadata is `remoteEntry.json`; sharing is configured in
+`federation.config.mjs`; the host page needs the es-module-shims setup above.
 
-Covers XML→JSON mapping including single-item, empty and malformed responses
-(the logic migrated out of XSL), and the contract-consistency checks described above.
+**Replacing `shareAll()` with an explicit allowlist has a cost worth knowing.** A shared
+bundle's own static imports must resolve through the import map, and pruning is by usage in
+*application* code — the wrong question. `@angular/platform-browser` imports
+`@angular/common/http`, and `@angular/core` imports `rxjs/operators`, in paths this app never
+executes. Both surfaced only at runtime, which is why `verify-bundle.mjs` now checks every
+bare specifier against the import map.
 
-Fault injection for resilience paths, via reserved customer ids:
+**Frontend only.** No BFF, COM Bridge, XML, .NET, IIS, authentication or ASPX. Feature data
+is in-memory. A previous iteration with a mock BFF (XML→JSON mapping, 7 tests) and an ASPX
+host simulation is preserved at tag `poc-with-bff-and-aspx-host`.
 
-| Request | Result |
-|---|---|
-| `/api/pricing/5555` | 404 `PRICING_CUSTOMER_NOT_FOUND`, not retryable |
-| `/api/pricing/9998` | 504 `PRICING_NOT_AVAILABLE`, retryable — bridge timeout |
-| `/api/pricing/9999` | 502 `PRICING_NOT_AVAILABLE`, retryable — malformed XML |
-| `/api/pricing/abc` | 400 `PRICING_INVALID_REQUEST` with validation errors |
-
-Every response carries a `traceId`, echoed in the `x-correlation-id` header.
-
-## Deviations from the document
-
-**Native Federation instead of Nx webpack Module Federation.** The document references
-webpack Module Federation and `remoteEntry.js`. This POC uses
-`@angular-architects/native-federation`, which is esbuild-based and matches where the
-Angular CLI has moved. The architecture is unchanged — the manifest maps a feature key to
-a remote entry URL, dependencies are shared singletons, and the remote exposes one
-registration module. The differences are that metadata is `remoteEntry.json` rather than
-`remoteEntry.js`, sharing is configured in `federation.config.mjs` via `shareAll`, and
-the host page needs the es-module-shims setup described above. The document's
-`import: false` guidance has no direct equivalent; singleton negotiation plus the bundle
-gate serve the same purpose.
-
-**The BFF is Node/Express, not .NET.** The .NET SDK is not available on this machine. The
-structure mirrors the document's design — COM Bridge client, XML deserialization and
-mapping, orchestration, endpoint, normalized errors — so it ports to ASP.NET Core
-directly. The COM Bridge itself is mocked; it returns realistic legacy-shaped XML so the
-mapping layer is genuinely exercised.
-
-**The ASPX host is simulated.** Classic ASPX needs IIS. `legacy-host/reference/` holds
-the real `.Master`, `.aspx` and `.aspx.cs` files; `legacy-host/pages/Pricing.html` is
-what that page renders to, and `legacy-host/server.js` reproduces the same-origin
-topology (`/ui`, `/api`, cache headers) that IIS or the reverse proxy would provide.
-
-## Not yet covered
-
-Scoped to the foundation and pilot page, this POC does not implement: a second domain
-remote, CI/CD pipeline definitions (sections 13.1–13.3), automated accessibility and
-performance budget gates, manifest signing, authentication/authorization (the BFF
-documents where it belongs but does not enforce it), or E2E browser tests. The
-per-page migration checklist in section 16.4 is also not yet mechanized.
+**Not covered:** CI/CD pipeline definitions, accessibility and performance budget gates,
+manifest signing, and authorization.
