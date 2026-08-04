@@ -84,9 +84,28 @@ try {
   process.exit(1);
 }
 
+// publish/ui/manifest.json is tracked but is release OUTPUT, not a build
+// INPUT — publishing the shell writes its version here, and promotion writes
+// feature routing here. Neither is read by any build, so neither changes
+// whether dist/ faithfully reflects git HEAD's source. Excluding it is what
+// lets `npm run release` publish shell then three providers in one
+// invocation without the shell's own manifest write making the next
+// artifact's publish see a "dirty" tree.
+const RELEASE_OUTPUT_PATHS = [path.join('publish', 'ui', 'manifest.json')];
+
 let gitStatus = null;
 try {
-  gitStatus = execSync('git status --porcelain', { cwd: repoRoot }).toString().trim();
+  const raw = execSync('git status --porcelain', { cwd: repoRoot }).toString().trim();
+  // Porcelain status prefix width varies (a file staged-only vs.
+  // staged-and-modified reports differently), so match by suffix rather than
+  // a fixed column offset — a status line always ends with the exact
+  // repo-relative path for a plain modify/add/delete (not a rename, which
+  // this tracked file is never subject to).
+  gitStatus = raw
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .filter((line) => !RELEASE_OUTPUT_PATHS.some((p) => line.endsWith(p)))
+    .join('\n');
 } catch {
   // Publishing outside a git checkout is allowed; metadata below records it.
 }
