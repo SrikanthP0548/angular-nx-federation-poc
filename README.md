@@ -173,7 +173,7 @@ resolve, across all four artifacts.
 
 ## Verified
 
-Run `npm test` (23 unit tests), `npm run lint:all`, and `npm run test:e2e` (27 specs).
+Run `npm test` (36 unit tests), `npm run lint:all`, and `npm run test:e2e` (27 specs).
 
 - **Nothing loads until a feature is requested.** The landing page downloads the shell and
   nothing else — no manifest fetch even, since the shell returns as soon as it finds no

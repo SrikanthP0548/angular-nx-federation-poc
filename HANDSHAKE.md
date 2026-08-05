@@ -1,6 +1,6 @@
 # Handshake — Angular Shell + Native Federation POC
 
-Briefing for picking up this project cold in a new chat. Written at commit `cbba35b`
+Briefing for picking up this project cold in a new chat. Written at commit `0a82619`
 on branch `feature/angular-shell-federation-poc`, tree clean, all tests green.
 
 ## What this is
@@ -40,7 +40,7 @@ libs/
 tools/
   host-simulator/                static server: /ui tree + one host page per feature
   publish-artifact.mjs, promote-manifest.mjs, provider-descriptors.mjs, verify-bundle.mjs,
-  federation-sharing.mjs, build-marker.mjs   — the whole release pipeline
+  federation-sharing.mjs, build-marker.mjs, release-helpers.mjs   — the whole release pipeline
 ```
 
 Each provider's `pages.json` is the machine-readable descriptor of what it serves
@@ -57,7 +57,7 @@ npm run build:all                          # production build, all 4 artifacts
 ARTIFACT_VERSION=x.y.z npm run release      # build + stamp + publish all 4 (needs a clean git tree)
 node tools/promote-manifest.mjs <featureKey> <version>   # point a feature at a published version
 node tools/verify-bundle.mjs               # sharing-allowlist gate (fails if a feature lib leaks into `shared`)
-npm test                                   # 24 unit tests (tools/*.test.mjs + shared-core)
+npm test                                   # 36 unit tests (tools/*.test.mjs + shared-core)
 npx nx e2e host-e2e                        # 27 Playwright specs, Chrome + Edge, against published artifacts
 node tools/host-simulator/server.js        # serves the published /ui tree + host pages on :44300
 ```
@@ -69,7 +69,7 @@ committing — it publishes but honestly records `dirty: true` in `build-metadat
 than silently attributing the artifact to a stale clean commit.
 
 **Current published state:** all four features (`pricing-search`, `pricing-details`,
-`feature-two`, `feature-three`) promoted to `1.2.0`, shell `1.2.0`, commit `cbba35b`,
+`feature-two`, `feature-three`) promoted to `1.3.0`, shell `1.3.0`, commit `0a82619`,
 `dirty: false`. Host simulator is running at `http://localhost:44300/`.
 
 ## Key design decisions worth knowing before changing anything
@@ -100,7 +100,7 @@ than silently attributing the artifact to a stale clean commit.
   architectural limitation" in the README if multi-widget-per-page ever becomes a
   requirement.
 
-## Recent history (three phases, in order)
+## Recent history (four phases, in order)
 
 1. **Restructure** (`0d019d2`..`849a3f3`): went from one app per page
    (`apps/pricing-remote`) to thin provider apps + one library per page. This is the change
@@ -136,6 +136,21 @@ than silently attributing the artifact to a stale clean commit.
      wrapper/binary versions and architecture both checked and matched). Documented honestly
      in the README's Troubleshooting section rather than claiming a fix that couldn't be
      verified.
+4. **Regression tests for phase 3** (`03a5321`, `0a82619`): none of phase 3's fixes had
+   dedicated automated coverage — all had been verified manually. `publish-artifact.mjs` and
+   `promote-manifest.mjs` were CLI scripts with the relevant logic inline and no test seam, so
+   five functions were extracted into `tools/release-helpers.mjs`
+   (`filterReleaseOutputPaths`/`checkWorkingTree`, `verifyChecksums`, `syncShellVersion`,
+   `activateShellCurrent`) — behavior-preserving; re-verified with a full clean-tree release +
+   promote + E2E cycle after the refactor, not just the new unit tests in isolation.
+   `resolveShellBaseUrl` was likewise extracted out of `main.ts` into its own file so it's
+   testable with jsdom (already a devDependency) rather than only reachable via a real browser.
+   36 unit tests total now (was 24). One test-writing mistake worth knowing about: the first
+   version of the `checkWorkingTree` exclusion test asserted the overall `dirty` flag went
+   `false`, which implicitly assumed the outer repo had no *other* uncommitted changes at
+   test-run time — false while this very work was in progress. Fixed to assert the exclusion
+   mechanism directly (the excluded path's status line disappears) plus a separate test against
+   a scratch git repo for the end-to-end "excluding everything makes it clean" property.
 
 ## Non-obvious lessons worth not re-learning
 
@@ -153,6 +168,11 @@ than silently attributing the artifact to a stale clean commit.
 - Native Federation's exposed-entry **filename** is controlled by the `exposes` **key**, not
   the source file's name (confirmed from `bundle-exposed-and-mappings.js` /
   `angular-bundler.js` source). If a filename needs to be readable, rename the key, not the file.
+- A test that shells out to check real repo state (`git status --porcelain` against `repoRoot`)
+  must not assume the ambient working tree is otherwise clean — it usually isn't, especially
+  mid-session. Assert the specific mechanism being tested (does path X's status line disappear
+  when excluded) rather than a downstream aggregate (is the tree clean overall), or spin up an
+  isolated scratch git repo when the aggregate behavior itself is what needs proving.
 
 ## Known, deliberate limitations (not bugs)
 
