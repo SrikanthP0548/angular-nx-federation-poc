@@ -1,0 +1,37 @@
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "rootDir": ".",
+    "sourceMap": true,
+    "declaration": false,
+    "moduleResolution": "bundler",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "importHelpers": true,
+    "target": "es2015",
+    "module": "esnext",
+    "lib": ["es2020", "dom"],
+    "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
+    "strict": false,
+    "paths": {
+      "@company/shared-core": ["./libs/shared/core/src/index.ts"],
+      "@company/features/pricing-search": [
+        "./libs/features/pricing-search/src/index.ts"
+      ],
+      "@company/features/pricing-details": [
+        "./libs/features/pricing-details/src/index.ts"
+      ],
+      "@company/features/feature-two": [
+        "./libs/features/feature-two/src/index.ts"
+      ],
+      "@company/features/feature-three": [
+        "./libs/features/feature-three/src/index.ts"
+      ],
+      "@company/data-access/pricing": [
+        "./libs/data-access/pricing/src/index.ts"
+      ]
+    }
+  },
+  "exclude": ["node_modules", "tmp"]
+}

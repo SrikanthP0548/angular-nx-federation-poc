@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "1.0",
+  "environment": "development",
+  "shell": {
+    "version": "0.1.0-dev"
+  },
+  "features": {
+    "pricing-search": {
+      "remoteName": "pricing",
+      "remoteEntry": "http://localhost:4201/remoteEntry.json",
+      "exposedModule": "./pricing-search",
+      "elementName": "ca-pricing-search",
+      "featureVersion": "dev",
+      "contractVersion": "1.x",
+      "enabled": true
+    },
+    "pricing-details": {
+      "remoteName": "pricing",
+      "remoteEntry": "http://localhost:4201/remoteEntry.json",
+      "exposedModule": "./pricing-details",
+      "elementName": "ca-pricing-details",
+      "featureVersion": "dev",
+      "contractVersion": "1.x",
+      "enabled": true
+    },
+    "feature-two": {
+      "remoteName": "feature-two",
+      "remoteEntry": "http://localhost:4202/remoteEntry.json",
+      "exposedModule": "./feature-two",
+      "elementName": "ca-feature-two",
+      "featureVersion": "dev",
+      "contractVersion": "1.x",
+      "enabled": true
+    },
+    "feature-three": {
+      "remoteName": "feature-three",
+      "remoteEntry": "http://localhost:4203/remoteEntry.json",
+      "exposedModule": "./feature-three",
+      "elementName": "ca-feature-three",
+      "featureVersion": "dev",
+      "contractVersion": "1.x",
+      "enabled": true
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "data-access-pricing",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/data-access/pricing/src",
+  "prefix": "pricing",
+  "projectType": "library",
+  "tags": [
+    "type:data-access"
+  ],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    }
+  }
+}

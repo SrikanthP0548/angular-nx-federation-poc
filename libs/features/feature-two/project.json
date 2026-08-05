@@ -1,0 +1,15 @@
+{
+  "name": "feature-two",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/features/feature-two/src",
+  "prefix": "feature",
+  "projectType": "library",
+  "tags": [
+    "type:page"
+  ],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.1",
+  "artifact": "feature-three",
+  "remoteName": "feature-three",
+  "pages": [
+    { "featureKey": "feature-three", "elementName": "ca-feature-three", "exposedModule": "./feature-three" }
+  ]
+}

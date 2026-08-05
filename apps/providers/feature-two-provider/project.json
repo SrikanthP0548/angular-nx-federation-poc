@@ -1,0 +1,122 @@
+{
+  "name": "feature-two-provider",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "prefix": "app",
+  "sourceRoot": "apps/providers/feature-two-provider/src",
+  "tags": [
+    "type:provider"
+  ],
+  "targets": {
+    "build": {
+      "executor": "@angular-architects/native-federation:build",
+      "defaultConfiguration": "production",
+      "options": {
+        "cacheExternalArtifacts": true
+      },
+      "configurations": {
+        "production": {
+          "target": "feature-two-provider:esbuild:production"
+        },
+        "development": {
+          "target": "feature-two-provider:esbuild:development",
+          "dev": true
+        }
+      }
+    },
+    "serve": {
+      "executor": "@angular-architects/native-federation:build",
+      "options": {
+        "target": "feature-two-provider:serve-original:development",
+        "rebuildDelay": 500,
+        "cacheExternalArtifacts": true,
+        "dev": true,
+        "devServer": true,
+        "port": 0
+      },
+      "continuous": true
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    },
+    "esbuild": {
+      "executor": "@angular/build:application",
+      "outputs": [
+        "{options.outputPath}"
+      ],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/providers/feature-two-provider",
+        "browser": "apps/providers/feature-two-provider/src/main.ts",
+        "tsConfig": "apps/providers/feature-two-provider/tsconfig.app.json",
+        "assets": [
+          {
+            "glob": "**/*",
+            "input": "apps/providers/feature-two-provider/public"
+          }
+        ],
+        "polyfills": [
+          "es-module-shims"
+        ]
+      },
+      "configurations": {
+        "production": {
+          "budgets": [
+            {
+              "type": "initial",
+              "maximumWarning": "500kb",
+              "maximumError": "1mb"
+            },
+            {
+              "type": "anyComponentStyle",
+              "maximumWarning": "4kb",
+              "maximumError": "8kb"
+            }
+          ],
+          "outputHashing": "none"
+        },
+        "development": {
+          "optimization": false,
+          "extractLicenses": false,
+          "sourceMap": true
+        }
+      }
+    },
+    "serve-original": {
+      "continuous": true,
+      "executor": "@angular/build:dev-server",
+      "defaultConfiguration": "development",
+      "options": {
+        "port": 4202
+      },
+      "configurations": {
+        "production": {
+          "buildTarget": "feature-two-provider:esbuild:production"
+        },
+        "development": {
+          "buildTarget": "feature-two-provider:esbuild:development"
+        }
+      }
+    },
+    "stamp": {
+      "executor": "nx:run-commands",
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false,
+      "options": {
+        "command": "node tools/stamp-build.mjs dist/apps/providers/feature-two-provider/browser"
+      }
+    },
+    "publish": {
+      "executor": "nx:run-commands",
+      "dependsOn": [
+        "stamp"
+      ],
+      "cache": false,
+      "options": {
+        "command": "node tools/publish-artifact.mjs feature-two \"$ARTIFACT_VERSION\""
+      }
+    }
+  }
+}
