@@ -127,6 +127,13 @@ const DOWNLOAD_READOUT = `<section id="downloads" aria-live="polite"></section>
       }, 400));
     </script>`;
 
+/**
+ * The three script tags in the returned markup are the integration contract,
+ * and each has a failure mode if altered: Native Federation installs the
+ * shared-dependency import map at runtime through es-module-shims, so the
+ * shell entry must be loaded as "module-shim" — a plain type="module" bypasses
+ * the shim and every bare Angular specifier fails to resolve.
+ */
 function renderHostPage(featureKey, query) {
   const page = PAGES[featureKey];
   const attributes = Object.entries(page.attributes(query))
@@ -141,11 +148,6 @@ function renderHostPage(featureKey, query) {
     )
     .join('\n      ');
 
-  // The three script tags below are the integration contract, and each has a
-  // failure mode if altered. Native Federation installs the shared-dependency
-  // import map at runtime through es-module-shims, so the shell entry must be
-  // loaded as "module-shim": a plain type="module" bypasses the shim and every
-  // bare Angular specifier fails to resolve.
   return `<!doctype html>
 <html lang="en">
   <head>

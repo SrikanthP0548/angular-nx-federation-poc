@@ -72,8 +72,6 @@ export function createFederatedFeature(registry: PageRegistry): FederatedFeature
       const element = createCustomElement(page.component, { injector: featureInjector });
       customElements.define(elementName, element);
     } catch (err) {
-      // Pre-commit failure: tear down whatever the providers constructed, or
-      // every retry leaks another injector.
       featureInjector?.destroy();
       throw err;
     }
@@ -105,13 +103,13 @@ export function createFederatedFeature(registry: PageRegistry): FederatedFeature
         return existing;
       }
 
-      // Stored before the first await so a concurrent call joins this promise
-      // rather than starting a second registration.
       const pending = registerPage(elementName, context).catch((err) => {
         inFlight.delete(elementName);
         throw err;
       });
 
+      // Set synchronously, before any await: a concurrent call must join this
+      // promise rather than start a second registration.
       inFlight.set(elementName, pending);
       return pending;
     },

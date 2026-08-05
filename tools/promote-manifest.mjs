@@ -8,11 +8,17 @@
  *
  * Validation before promotion:
  *   - the artifact exists at its immutable published path
- *   - its checksums still match what was published
- *   - it actually serves the element name this feature key expects
+ *   - its checksums still match what was published (checksums.json itself is
+ *     the one exclusion — it's written after the tree is hashed, so it can't
+ *     contain its own hash)
+ *   - it actually serves the element name this feature key expects, so a
+ *     manifest/artifact mismatch can't surface in production as a blank page
  *   - its contract version is compatible with the deployed shell
  *   - its Angular version matches the shell's
  *   - the previous version stays on disk for rollback
+ *
+ * One provider artifact can serve several feature keys, so the artifact
+ * directory below is not necessarily the feature key.
  *
  * Promotion is atomic: the manifest is written to a temp file and renamed
  * over the live one, so no request ever reads a partial manifest.
@@ -44,8 +50,6 @@ if (!existing) {
   fail(`feature key "${featureKey}" is not defined in the manifest`);
 }
 
-// One provider artifact can serve several feature keys, so the artifact
-// directory is not necessarily the feature key.
 const artifactName = existing.artifact ?? featureKey;
 const artifactDir = path.join(publishRoot, artifactName, version);
 if (!fs.existsSync(artifactDir)) {
@@ -58,18 +62,12 @@ if (!fs.existsSync(metadataPath)) {
 }
 const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
 
-// Artifact integrity, including build-metadata.json itself — the file this
-// script trusts for the served pages, element names and exposed modules it
-// gates promotion on. checksums.json is the one legitimate exclusion: it is
-// written after the tree is hashed, so it cannot contain its own hash.
 const checksums = JSON.parse(fs.readFileSync(path.join(artifactDir, 'checksums.json'), 'utf8'));
 const checksumProblems = verifyChecksums(artifactDir, checksums);
 if (checksumProblems.length > 0) {
   fail(checksumProblems[0]);
 }
 
-// The artifact must actually serve this feature. Without this check a
-// manifest/artifact mismatch surfaces in production as a blank page.
 const served = metadata.pages ?? [];
 const servedEntry = served.find((p) => p.featureKey === featureKey);
 if (!servedEntry) {
@@ -85,7 +83,6 @@ if (servedEntry.elementName !== existing.elementName) {
   );
 }
 
-// Compatibility gates.
 if (metadata.platformContract.split('.')[0] !== SHELL_CONTRACT_MAJOR) {
   fail(`contract ${metadata.platformContract} is incompatible with shell contract ${SHELL_CONTRACT_MAJOR}.x`);
 }

@@ -57,7 +57,7 @@ npm run build:all                          # production build, all 4 artifacts
 ARTIFACT_VERSION=x.y.z npm run release      # build + stamp + publish all 4 (needs a clean git tree)
 node tools/promote-manifest.mjs <featureKey> <version>   # point a feature at a published version
 node tools/verify-bundle.mjs               # sharing-allowlist gate (fails if a feature lib leaks into `shared`)
-npm test                                   # 36 unit tests (tools/*.test.mjs + shared-core)
+npm test                                   # 46 unit tests (36 tools/*.test.mjs + 10 shared-core)
 npx nx e2e host-e2e                        # 27 Playwright specs, Chrome + Edge, against published artifacts
 node tools/host-simulator/server.js        # serves the published /ui tree + host pages on :44300
 ```
@@ -145,7 +145,9 @@ than silently attributing the artifact to a stale clean commit.
    promote + E2E cycle after the refactor, not just the new unit tests in isolation.
    `resolveShellBaseUrl` was likewise extracted out of `main.ts` into its own file so it's
    testable with jsdom (already a devDependency) rather than only reachable via a real browser.
-   36 unit tests total now (was 24). One test-writing mistake worth knowing about: the first
+   46 unit tests total now (was 24): 36 in `tools/*.test.mjs` plus 10 in `shared-core`, both
+   counts confirmed by actually running each suite rather than assumed. One test-writing
+   mistake worth knowing about: the first
    version of the `checkWorkingTree` exclusion test asserted the overall `dirty` flag went
    `false`, which implicitly assumed the outer repo had no *other* uncommitted changes at
    test-run time — false while this very work was in progress. Fixed to assert the exclusion

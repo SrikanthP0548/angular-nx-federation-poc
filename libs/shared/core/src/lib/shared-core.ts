@@ -72,9 +72,6 @@ export interface PageDefinition {
   providers: Array<Provider | EnvironmentProviders>;
 }
 
-/** The shape a feature library's barrel satisfies when loaded dynamically. */
-export type PageModule = Record<string, unknown>;
-
 /** Context the shell passes to a provider's register() function. */
 export interface FeatureRegistrationContext {
   shellInjector: EnvironmentInjector;
