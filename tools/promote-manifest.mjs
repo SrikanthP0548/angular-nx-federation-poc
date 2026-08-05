@@ -17,9 +17,9 @@
  * Promotion is atomic: the manifest is written to a temp file and renamed
  * over the live one, so no request ever reads a partial manifest.
  */
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { verifyChecksums } from './release-helpers.mjs';
 
 const [featureKey, version] = process.argv.slice(2);
 if (!featureKey || !version) {
@@ -63,12 +63,9 @@ const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
 // gates promotion on. checksums.json is the one legitimate exclusion: it is
 // written after the tree is hashed, so it cannot contain its own hash.
 const checksums = JSON.parse(fs.readFileSync(path.join(artifactDir, 'checksums.json'), 'utf8'));
-for (const [relative, expected] of Object.entries(checksums)) {
-  if (relative === 'checksums.json') continue;
-  const actual = `sha256-${createHash('sha256').update(fs.readFileSync(path.join(artifactDir, relative))).digest('hex')}`;
-  if (actual !== expected) {
-    fail(`checksum mismatch for ${relative} — the published artifact was modified after publication`);
-  }
+const checksumProblems = verifyChecksums(artifactDir, checksums);
+if (checksumProblems.length > 0) {
+  fail(checksumProblems[0]);
 }
 
 // The artifact must actually serve this feature. Without this check a

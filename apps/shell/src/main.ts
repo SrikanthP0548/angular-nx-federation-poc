@@ -10,6 +10,7 @@
 import { initFederation } from '@angular-architects/native-federation';
 import type { RuntimeManifest, FeatureManifestEntry } from '@company/shared-core';
 import { renderShellFailure } from './shell-failure';
+import { resolveShellBaseUrl } from './resolve-shell-base-url';
 
 const SUPPORTED_MANIFEST_SCHEMA = '1.0';
 const DEFAULT_MANIFEST_URL = '/ui/manifest.json';
@@ -22,25 +23,9 @@ const SHELL_CONTRACT_MAJOR = '1';
  * arbitrary paths. Its own federation metadata must therefore be resolved
  * against the shell's asset location, not the host document — otherwise the
  * shared-dependency import map is never installed and the first Angular
- * import fails to resolve.
- *
- * Read from this script's own <script src> in the DOM rather than
- * `import.meta.url`: under Angular's Vite-based dev server (`nx serve
- * shell`), `import.meta.url` resolves to an internal `@fs/.../vite-root/...`
- * virtual path with no trailing slash after `new URL('.', ...)`, which
- * silently produces a malformed remoteEntry.json URL and breaks federation
- * before Angular ever loads. `HTMLScriptElement.src` always reflects the
- * browser-resolved absolute URL, in both dev and the production/module-shim
- * path — verified against both.
+ * import fails to resolve. See resolve-shell-base-url.ts for why this isn't
+ * `import.meta.url`; tools/shell-base-url.test.mjs covers it directly.
  */
-function resolveShellBaseUrl(): string {
-  const script = document.querySelector<HTMLScriptElement>('script[src$="main.js"]');
-  if (!script) {
-    throw new Error('shell.start.failed: could not locate this script\'s own <script src="...main.js"> tag');
-  }
-  return new URL('.', script.src).href;
-}
-
 const SHELL_BASE_URL = resolveShellBaseUrl();
 
 async function loadRuntimeManifest(url: string): Promise<RuntimeManifest> {

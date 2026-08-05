@@ -21,9 +21,19 @@ import {
   validateAllProviders,
   validateDescriptor,
 } from './provider-descriptors.mjs';
+import { activateShellCurrent, checkWorkingTree, syncShellVersion } from './release-helpers.mjs';
 
 const [artifactName, version] = process.argv.slice(2);
 const repoRoot = path.resolve(import.meta.dirname, '..');
+
+// publish/ui/manifest.json is tracked but is release OUTPUT, not a build
+// INPUT — publishing the shell writes its version here, and promotion writes
+// feature routing here. Neither is read by any build, so neither changes
+// whether dist/ faithfully reflects git HEAD's source. Excluding it is what
+// lets `npm run release` publish shell then three providers in one
+// invocation without the shell's own manifest write making the next
+// artifact's publish see a "dirty" tree.
+const RELEASE_OUTPUT_PATHS = [path.join('publish', 'ui', 'manifest.json')];
 
 // Cross-provider uniqueness (featureKey, elementName, artifact, remoteName)
 // is only meaningful checked globally, and `npm test` running it is not a
@@ -84,32 +94,7 @@ try {
   process.exit(1);
 }
 
-// publish/ui/manifest.json is tracked but is release OUTPUT, not a build
-// INPUT — publishing the shell writes its version here, and promotion writes
-// feature routing here. Neither is read by any build, so neither changes
-// whether dist/ faithfully reflects git HEAD's source. Excluding it is what
-// lets `npm run release` publish shell then three providers in one
-// invocation without the shell's own manifest write making the next
-// artifact's publish see a "dirty" tree.
-const RELEASE_OUTPUT_PATHS = [path.join('publish', 'ui', 'manifest.json')];
-
-let gitStatus = null;
-try {
-  const raw = execSync('git status --porcelain', { cwd: repoRoot }).toString().trim();
-  // Porcelain status prefix width varies (a file staged-only vs.
-  // staged-and-modified reports differently), so match by suffix rather than
-  // a fixed column offset — a status line always ends with the exact
-  // repo-relative path for a plain modify/add/delete (not a rename, which
-  // this tracked file is never subject to).
-  gitStatus = raw
-    .split('\n')
-    .filter((line) => line.trim().length > 0)
-    .filter((line) => !RELEASE_OUTPUT_PATHS.some((p) => line.endsWith(p)))
-    .join('\n');
-} catch {
-  // Publishing outside a git checkout is allowed; metadata below records it.
-}
-const dirty = Boolean(gitStatus);
+const { dirty, status: gitStatus } = checkWorkingTree(repoRoot, RELEASE_OUTPUT_PATHS);
 if (dirty && !process.env.ALLOW_DIRTY_PUBLISH) {
   console.error('publish rejected: working tree is not clean');
   console.error(`  ${gitStatus.split('\n').join('\n  ')}`);
@@ -197,39 +182,14 @@ fs.writeFileSync(path.join(target, 'checksums.json'), JSON.stringify(checksumTre
 // also gets a mutable `current` pointer with a short cache lifetime.
 if (artifactName === 'shell') {
   const publishDir = path.join(repoRoot, config.publishDir);
-  const current = path.join(publishDir, 'current');
-  const pid = process.pid;
-  const stagedNew = path.join(publishDir, `.current-tmp-${pid}`);
-  const staleOld = path.join(publishDir, `.current-old-${pid}`);
-
-  // Build the replacement fully under a temp name first, then swap it in
-  // with two directory renames (each atomic on POSIX) instead of the
-  // previous delete-then-recursive-copy, which left a real window where a
-  // concurrent request could see `current` missing or half-written. POSIX
-  // rename cannot replace a non-empty directory in one step, so the old
-  // `current` is moved aside rather than overwritten directly — that move is
-  // itself atomic, and the moment the new directory lands at `current` is a
-  // single syscall, not a copy loop.
-  fs.rmSync(stagedNew, { recursive: true, force: true });
-  fs.cpSync(target, stagedNew, { recursive: true });
-  if (fs.existsSync(current)) {
-    fs.renameSync(current, staleOld);
-  }
-  fs.renameSync(stagedNew, current);
-  fs.rmSync(staleOld, { recursive: true, force: true });
-
+  activateShellCurrent(publishDir, target);
   console.info(`  updated shell/current -> ${version}`);
 
   // manifest.json's shell.version is what the shell reports in its own
   // startup telemetry; leaving it static once the shell version drifts is
   // exactly the kind of thing that quietly makes telemetry lie.
   const manifestPath = path.join(repoRoot, 'publish', 'ui', 'manifest.json');
-  if (fs.existsSync(manifestPath)) {
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    manifest.shell = { ...manifest.shell, version };
-    const tempManifestPath = `${manifestPath}.${pid}.tmp`;
-    fs.writeFileSync(tempManifestPath, JSON.stringify(manifest, null, 2) + '\n');
-    fs.renameSync(tempManifestPath, manifestPath);
+  if (syncShellVersion(manifestPath, version)) {
     console.info(`  updated manifest.json shell.version -> ${version}`);
   }
 }
