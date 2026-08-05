@@ -45,7 +45,7 @@ export function listProviderDirs() {
     .sort();
 }
 
-export function descriptorPath(providerDir) {
+function descriptorPath(providerDir) {
   return path.join(PROVIDERS_DIR, providerDir, 'pages.json');
 }
 
@@ -105,6 +105,9 @@ export function readRegisteredElementNames(absoluteSourceFilePath) {
 /**
  * Validates one descriptor in isolation. Returns an array of problems; empty
  * means valid. Cross-provider checks live in {@link validateAllProviders}.
+ *
+ * Also flags an exposed key with no claiming page: an unclaimed key can never
+ * be promoted, since no manifest entry can name it.
  */
 export function validateDescriptor(providerDir, overrides = {}) {
   const problems = [];
@@ -172,8 +175,6 @@ export function validateDescriptor(providerDir, overrides = {}) {
     }
   }
 
-  // Every exposed key the provider declares should be claimed by some page —
-  // an unclaimed key can never be promoted, since no manifest entry can name it.
   const claimedModules = new Set(descriptor.pages.map((p) => p.exposedModule));
   for (const key of Object.keys(exposesMap)) {
     if (!claimedModules.has(key)) {
@@ -191,6 +192,12 @@ export function validateDescriptor(providerDir, overrides = {}) {
  * the shell loads one provider per document — but the manifest could route a
  * feature key to the wrong artifact, and the ambiguity only gets harder to
  * unwind as providers multiply.
+ *
+ * A duplicate `artifact` name is checked for the same reason:
+ * publish-artifact.mjs keys its artifact map by `descriptor.artifact`, so a
+ * collision would silently make one provider unreachable by name — whichever
+ * is processed last in the map wins, the other can never be published or
+ * promoted again through the normal CLI.
  */
 export function validateAllProviders() {
   const problems = [];
@@ -203,10 +210,6 @@ export function validateAllProviders() {
     const { descriptor, problems: own } = validateDescriptor(dir);
     problems.push(...own.map((p) => `${dir}: ${p}`));
 
-    // publish-artifact.mjs keys its artifact map by `descriptor.artifact`,
-    // so a collision here silently makes one provider unreachable by name —
-    // whichever is processed last in the map wins, the other can never be
-    // published or promoted again through the normal CLI.
     if (descriptor.artifact) {
       const priorArtifact = artifactOwner.get(descriptor.artifact);
       if (priorArtifact) {

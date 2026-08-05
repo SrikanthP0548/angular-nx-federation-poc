@@ -62,7 +62,8 @@ the network rather than the panel's own report of itself.
    contract version before contacting the provider.
 4. It initialises Native Federation for that one provider and creates a single Angular
    environment — no root component.
-5. It loads the provider's `./register` module and calls it with its own injector.
+5. It loads the module named by the manifest's `exposedModule` (e.g. `./pricing-search`) and
+   calls it with its own injector.
 6. The provider looks the element name up in its page registry, **dynamically imports only
    that page**, creates a child `EnvironmentInjector`, and defines the custom element.
 7. The browser upgrades the tag already in the document.
@@ -173,7 +174,8 @@ resolve, across all four artifacts.
 
 ## Verified
 
-Run `npm test` (36 unit tests), `npm run lint:all`, and `npm run test:e2e` (27 specs).
+Run `npm test` (46 unit tests: 36 in `tools/*.test.mjs` + 10 in `shared-core`), `npm run
+lint:all`, and `npm run test:e2e` (27 specs).
 
 - **Nothing loads until a feature is requested.** The landing page downloads the shell and
   nothing else — no manifest fetch even, since the shell returns as soon as it finds no
@@ -260,7 +262,11 @@ bare specifier against the import map.
 
 **Frontend only.** No BFF, COM Bridge, XML, .NET, IIS, authentication or ASPX. Feature data
 is in-memory. A previous iteration with a mock BFF (XML→JSON mapping, 7 tests) and an ASPX
-host simulation is preserved at tag `poc-with-bff-and-aspx-host`.
+host simulation is preserved at tag `poc-with-bff-and-aspx-host`. A forward-looking design for
+a *future* phase — serving the published `/ui` tree alongside an existing ASP.NET Web Forms
+application from an IIS virtual directory, with no changes to the .NET solution — is sketched
+in [`IIS-SPA-INTEGRATION-PLAN.md`](IIS-SPA-INTEGRATION-PLAN.md); nothing in this branch
+implements it yet.
 
 **Not covered:** accessibility and performance budget gates, manifest signing, and
 authorization. CI/CD *is* covered — see `.github/workflows/ci.yml`: lint/test/build, the

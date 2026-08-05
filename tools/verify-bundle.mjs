@@ -63,13 +63,25 @@ function readShellImports() {
   return new Set(Object.keys(JSON.parse(fs.readFileSync(shellMap, 'utf8')).imports ?? {}));
 }
 
+/**
+ * Runs the three checks described in the file header against one built
+ * artifact.
+ *
+ * Classifier used throughout: an npm external always carries the
+ * bundle-group name in `remoteEntry.shared`; a workspace mapping never does.
+ * The second workspace-path loop below is belt and braces, for a path key
+ * that reached `shared` some other way than the classifier above. Framework
+ * packages that are present must be strict singletons, but presence itself
+ * isn't required — an artifact that never touches @angular/forms legitimately
+ * doesn't share it. For check (3), workspace mappings are added to the
+ * resolvable set explicitly because they're registered at runtime from
+ * `remoteEntry.json` rather than appearing in `importmap.json`.
+ */
 function verifyArtifact(distDir, workspacePathKeys, shellImports) {
   const failures = [];
   const remoteEntry = JSON.parse(fs.readFileSync(path.join(distDir, 'remoteEntry.json'), 'utf8'));
   const shared = new Map(remoteEntry.shared.map((s) => [s.packageName, s]));
 
-  // An npm external always carries the bundle-group name; a workspace mapping
-  // never does. That is the definitive classifier.
   const mappings = remoteEntry.shared.filter((s) => !('bundle' in s)).map((s) => s.packageName);
 
   // (1) No workspace library shared unless allowlisted.
@@ -82,7 +94,6 @@ function verifyArtifact(distDir, workspacePathKeys, shellImports) {
       );
     }
   }
-  // Belt and braces: a path key that reached `shared` some other way.
   for (const name of workspacePathKeys) {
     if (shared.has(name) && !SHARED_MAPPINGS.includes(name)) {
       failures.push(`workspace path "${name}" is shared but not allowlisted`);
@@ -104,9 +115,6 @@ function verifyArtifact(distDir, workspacePathKeys, shellImports) {
     if (!entry.strictVersion) failures.push(`"${name}" is shared without strictVersion — a mismatch would fail silently`);
   }
 
-  // Framework packages that are present must be strict singletons. Presence
-  // itself is not required: an artifact that never touches @angular/forms
-  // legitimately does not share it.
   for (const entry of remoteEntry.shared) {
     if (!('bundle' in entry)) continue;
     if (!entry.singleton) failures.push(`"${entry.packageName}" is shared but not singleton`);
@@ -117,8 +125,6 @@ function verifyArtifact(distDir, workspacePathKeys, shellImports) {
   const importMapPath = path.join(distDir, 'importmap.json');
   if (fs.existsSync(importMapPath)) {
     const importMap = JSON.parse(fs.readFileSync(importMapPath, 'utf8'));
-    // Workspace mappings are registered at runtime from remoteEntry.json
-    // rather than appearing in importmap.json, so they resolve too.
     const resolvable = new Set([
       ...Object.keys(importMap.imports ?? {}),
       ...shellImports,
@@ -131,12 +137,8 @@ function verifyArtifact(distDir, workspacePathKeys, shellImports) {
       const content = fs.readFileSync(path.join(distDir, file), 'utf8');
       for (const [, specifier] of content.matchAll(IMPORT_SOURCE)) {
         if (specifier.startsWith('.') || specifier.startsWith('/') || specifier.startsWith('http')) continue;
-        // Skip specifiers built from template literals — those are runtime
-        // constructions, not static bare specifiers.
-        if (specifier.includes('${')) continue;
-        // Native Federation's own chunk aliases are registered at load time
-        // from remoteEntry.json, never from importmap.json.
-        if (specifier.startsWith('@nf-internal/')) continue;
+        if (specifier.includes('${')) continue; // runtime-built, not a static bare specifier
+        if (specifier.startsWith('@nf-internal/')) continue; // NF's own chunk aliases, resolved from remoteEntry.json
         if (!resolvable.has(specifier)) {
           failures.push(
             `${file} imports "${specifier}" but nothing in the import map resolves it — ` +

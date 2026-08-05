@@ -39,6 +39,13 @@ function readBootstrapContext(): Partial<RuntimeConfig> & Record<string, unknown
   }
 }
 
+/**
+ * The contract-compatibility check below is a re-check, not the first one:
+ * `main.ts` already validated the manifest entry before fetching any provider
+ * code, but this uses shared-core's own `isContractCompatible` rather than
+ * the duplicated check there, because the manifest and the artifact it
+ * points at can disagree.
+ */
 export async function bootstrapFeature(options: BootstrapFeatureOptions): Promise<void> {
   const { host, manifest, feature } = options;
   const logger = new ConsolePlatformLogger();
@@ -53,9 +60,6 @@ export async function bootstrapFeature(options: BootstrapFeatureOptions): Promis
     assetBasePath: typeof bootstrapContext.assetBasePath === 'string' ? bootstrapContext.assetBasePath : '/ui',
   };
 
-  // Compatibility gate before loading provider code. main.ts already checked
-  // the manifest entry; this re-checks using shared-core's own implementation,
-  // because the manifest and the artifact can disagree.
   if (!isContractCompatible(feature.contractVersion)) {
     logger.error('shell.feature.incompatible', feature.contractVersion, { shellContract: PLATFORM_CONTRACT_VERSION });
     throw new Error(
@@ -63,7 +67,6 @@ export async function bootstrapFeature(options: BootstrapFeatureOptions): Promis
     );
   }
 
-  // One Angular environment per host document; no root component is rendered.
   const appRef = await createApplication({
     providers: [
       ...(appConfig.providers ?? []),

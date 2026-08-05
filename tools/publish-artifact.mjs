@@ -8,6 +8,35 @@
  * Publishing never overwrites an existing version — immutability is what
  * makes both aggressive caching and instant rollback safe — and never trusts
  * a `dist/` it did not just produce (see tools/build-marker.mjs).
+ *
+ * Non-obvious things below, and why:
+ *  - Cross-provider uniqueness (featureKey/elementName/artifact/remoteName)
+ *    is checked globally, up front. `npm test` runs the same check, but
+ *    that's not a guarantee for a manual `npm run release`, and a duplicate
+ *    artifact name would silently make a provider unreachable in the
+ *    artifact map below.
+ *  - `RELEASE_OUTPUT_PATHS` is excluded from the "is the tree clean" check.
+ *    `publish/ui/manifest.json` is tracked but is release OUTPUT, not a
+ *    build INPUT — publishing the shell writes its version there, and
+ *    promotion writes feature routing there. Without the exclusion,
+ *    publishing the shell would make the next artifact's publish in the
+ *    same release run see a "dirty" tree.
+ *  - `assertBuiltInThisRun` proves *when* dist/ was produced, not *what
+ *    source tree* it came from — a dirty working tree at build time means
+ *    the artifact contains changes git HEAD doesn't, which is what the
+ *    working-tree check below catches separately.
+ *  - The build-provenance marker is stripped from the published copy: it's
+ *    provenance for this script's own gate, not part of the deployed
+ *    artifact.
+ *  - `dirty` is always written explicitly, never omitted when clean, so a
+ *    reader never has to wonder whether it was checked.
+ *  - No top-level `exposedModule` in the metadata: a provider can expose
+ *    more than one key now, so `pages[i].exposedModule` is the only place
+ *    that value legitimately lives.
+ *  - A shell publish additionally activates `shell/current` (every host
+ *    page references it through one stable URL) and syncs `manifest.json`'s
+ *    `shell.version` — the shell reports that field in its own startup
+ *    telemetry, and left stale it would quietly start lying.
  */
 import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
@@ -26,20 +55,8 @@ import { activateShellCurrent, checkWorkingTree, syncShellVersion } from './rele
 const [artifactName, version] = process.argv.slice(2);
 const repoRoot = path.resolve(import.meta.dirname, '..');
 
-// publish/ui/manifest.json is tracked but is release OUTPUT, not a build
-// INPUT — publishing the shell writes its version here, and promotion writes
-// feature routing here. Neither is read by any build, so neither changes
-// whether dist/ faithfully reflects git HEAD's source. Excluding it is what
-// lets `npm run release` publish shell then three providers in one
-// invocation without the shell's own manifest write making the next
-// artifact's publish see a "dirty" tree.
 const RELEASE_OUTPUT_PATHS = [path.join('publish', 'ui', 'manifest.json')];
 
-// Cross-provider uniqueness (featureKey, elementName, artifact, remoteName)
-// is only meaningful checked globally, and `npm test` running it is not a
-// guarantee for a manual `npm run release` — enforce it directly here so
-// publishing can't skip the one check that catches a duplicate artifact
-// name silently making a provider unreachable in the map below.
 const globalProblems = validateAllProviders();
 if (globalProblems.length > 0) {
   console.error('publish rejected: provider descriptors are not globally consistent:');
@@ -82,11 +99,6 @@ if (!fs.existsSync(source)) {
   process.exit(1);
 }
 
-// Build provenance: fails closed on a missing or stale marker. This proves
-// *when* dist/ was produced, but not *what source tree* it came from — a
-// dirty working tree at build time means the artifact contains changes that
-// git HEAD does not, and the commit metadata below would misattribute it to
-// a commit that doesn't actually contain what was published.
 try {
   assertBuiltInThisRun(source);
 } catch (err) {
@@ -115,8 +127,6 @@ const remoteEntry = fs.existsSync(remoteEntryPath)
   ? JSON.parse(fs.readFileSync(remoteEntryPath, 'utf8'))
   : null;
 
-// Providers must publish a descriptor consistent with their federation config
-// and with the artifact the build actually produced.
 let pages = null;
 if (config.providerDir) {
   const { descriptor, problems } = validateDescriptor(config.providerDir);
@@ -131,7 +141,6 @@ if (config.providerDir) {
 }
 
 fs.cpSync(source, target, { recursive: true });
-// The marker is provenance for publishing, not part of the deployed artifact.
 fs.rmSync(path.join(target, MARKER_FILE), { force: true });
 
 function checksumTree(dir, base = dir) {
@@ -162,32 +171,22 @@ const metadata = {
   artifact: artifactName,
   version,
   commit,
-  // Explicit rather than inferred from absence: a reader should never have
-  // to wonder whether "dirty" was checked and found clean, or never checked.
   dirty,
   builtAt: new Date().toISOString(),
   angularVersion,
   platformContract: '1.x',
   ...(remoteEntry ? { remoteName: remoteEntry.name } : {}),
-  // No top-level exposedModule: a provider can expose more than one key now,
-  // so `pages[i].exposedModule` (already per-page from the descriptor) is the
-  // only place that value legitimately lives.
   ...(pages ? { pages } : {}),
 };
 
 fs.writeFileSync(path.join(target, 'build-metadata.json'), JSON.stringify(metadata, null, 2));
 fs.writeFileSync(path.join(target, 'checksums.json'), JSON.stringify(checksumTree(target), null, 2));
 
-// The shell is referenced by every host page through one stable URL, so it
-// also gets a mutable `current` pointer with a short cache lifetime.
 if (artifactName === 'shell') {
   const publishDir = path.join(repoRoot, config.publishDir);
   activateShellCurrent(publishDir, target);
   console.info(`  updated shell/current -> ${version}`);
 
-  // manifest.json's shell.version is what the shell reports in its own
-  // startup telemetry; leaving it static once the shell version drifts is
-  // exactly the kind of thing that quietly makes telemetry lie.
   const manifestPath = path.join(repoRoot, 'publish', 'ui', 'manifest.json');
   if (syncShellVersion(manifestPath, version)) {
     console.info(`  updated manifest.json shell.version -> ${version}`);
