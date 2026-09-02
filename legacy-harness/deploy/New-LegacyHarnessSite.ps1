@@ -119,11 +119,17 @@ foreach ($virtualDirectory in @(
     @{ Name = 'AngularShell'; PhysicalPath = $AngularRoot },
     @{ Name = 'ui'; PhysicalPath = $UiRoot }
 )) {
+    $existingApplication = Get-WebApplication -Site $SiteName -Name $virtualDirectory.Name -ErrorAction SilentlyContinue
+    if ($null -ne $existingApplication) {
+        throw "An IIS application named '$($virtualDirectory.Name)' already exists under '$SiteName'; refusing to modify or remove it."
+    }
+
     $existing = Get-WebVirtualDirectory -Site $SiteName -Name $virtualDirectory.Name -ErrorAction SilentlyContinue
     if ($null -ne $existing) {
-        Remove-WebVirtualDirectory -Site $SiteName -Application '/' -Name $virtualDirectory.Name
+        Set-ItemProperty "IIS:\Sites\$SiteName\$($virtualDirectory.Name)" -Name physicalPath -Value $virtualDirectory.PhysicalPath
+    } else {
+        New-WebVirtualDirectory -Site $SiteName -Name $virtualDirectory.Name -PhysicalPath $virtualDirectory.PhysicalPath | Out-Null
     }
-    New-WebVirtualDirectory -Site $SiteName -Name $virtualDirectory.Name -PhysicalPath $virtualDirectory.PhysicalPath | Out-Null
 }
 
 Set-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' -Location $SiteName -Filter 'system.webServer/asp' -Name scriptErrorSentToBrowser -Value $true
