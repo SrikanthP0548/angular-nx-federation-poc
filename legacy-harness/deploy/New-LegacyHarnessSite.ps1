@@ -121,7 +121,7 @@ foreach ($virtualDirectory in @(
 )) {
     $existing = Get-WebVirtualDirectory -Site $SiteName -Name $virtualDirectory.Name -ErrorAction SilentlyContinue
     if ($null -ne $existing) {
-        Remove-WebVirtualDirectory -Site $SiteName -Name $virtualDirectory.Name
+        Remove-WebVirtualDirectory -Site $SiteName -Application '/' -Name $virtualDirectory.Name
     }
     New-WebVirtualDirectory -Site $SiteName -Name $virtualDirectory.Name -PhysicalPath $virtualDirectory.PhysicalPath | Out-Null
 }
