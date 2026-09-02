@@ -50,7 +50,14 @@ import {
   validateAllProviders,
   validateDescriptor,
 } from './provider-descriptors.mjs';
-import { activateShellCurrent, checkWorkingTree, syncShellVersion } from './release-helpers.mjs';
+import {
+  activateShellCurrent,
+  beginVersionPublish,
+  checkWorkingTree,
+  finalizeVersionPublish,
+  isValidPublishVersion,
+  syncShellVersion,
+} from './release-helpers.mjs';
 
 const [artifactName, version] = process.argv.slice(2);
 const repoRoot = path.resolve(import.meta.dirname, '..');
@@ -86,6 +93,12 @@ if (!artifactName || !version) {
   console.error(`usage: node tools/publish-artifact.mjs <${Object.keys(ARTIFACTS).join('|')}> <version>`);
   process.exit(1);
 }
+if (!isValidPublishVersion(version)) {
+  // version becomes a directory name below (publish/ui/<artifact>/<version>) —
+  // reject anything that isn't strict SemVer before it ever reaches a path.
+  console.error(`invalid version "${version}" — expected strict SemVer, e.g. 1.2.3 or 1.2.3-ci`);
+  process.exit(1);
+}
 
 const config = ARTIFACTS[artifactName];
 if (!config) {
@@ -116,8 +129,13 @@ if (dirty && !process.env.ALLOW_DIRTY_PUBLISH) {
   process.exit(1);
 }
 
-const target = path.join(repoRoot, config.publishDir, version);
-if (fs.existsSync(target)) {
+const publishDir = path.join(repoRoot, config.publishDir);
+
+// Immutability is checked now (before the descriptor validation below,
+// which can itself take real time) so a doomed publish fails fast, but the
+// actual copy is deferred until after validation passes — see the
+// beginVersionPublish call further down.
+if (fs.existsSync(path.join(publishDir, version))) {
   console.error(`refusing to overwrite published version ${artifactName}@${version} — published artifacts are immutable`);
   process.exit(1);
 }
@@ -140,8 +158,18 @@ if (config.providerDir) {
   pages = descriptor.pages;
 }
 
-fs.cpSync(source, target, { recursive: true });
-fs.rmSync(path.join(target, MARKER_FILE), { force: true });
+// Staged under a temp name, not copied straight to <publishDir>/<version>:
+// an interrupted copy must never leave a partial directory sitting at the
+// real, immutable-by-name path, which a retry of this exact version could
+// then never get past.
+let staging;
+try {
+  staging = beginVersionPublish(publishDir, source, version);
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
+fs.rmSync(path.join(staging, MARKER_FILE), { force: true });
 
 function checksumTree(dir, base = dir) {
   const out = {};
@@ -179,11 +207,18 @@ const metadata = {
   ...(pages ? { pages } : {}),
 };
 
-fs.writeFileSync(path.join(target, 'build-metadata.json'), JSON.stringify(metadata, null, 2));
-fs.writeFileSync(path.join(target, 'checksums.json'), JSON.stringify(checksumTree(target), null, 2));
+fs.writeFileSync(path.join(staging, 'build-metadata.json'), JSON.stringify(metadata, null, 2));
+fs.writeFileSync(path.join(staging, 'checksums.json'), JSON.stringify(checksumTree(staging), null, 2));
+
+let target;
+try {
+  target = finalizeVersionPublish(publishDir, staging, version);
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
 
 if (artifactName === 'shell') {
-  const publishDir = path.join(repoRoot, config.publishDir);
   activateShellCurrent(publishDir, target);
   console.info(`  updated shell/current -> ${version}`);
 

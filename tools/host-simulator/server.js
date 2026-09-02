@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..', '..');
 const publishRoot = path.join(repoRoot, 'publish', 'ui');
+const containerPublishRoot = path.join(repoRoot, 'publish', 'angular-shell');
 const PORT = Number(process.env.HOST_PORT ?? 44300);
 
 /** Every migrated page gets its own host page; unmigrated pages are untouched. */
@@ -256,6 +257,103 @@ ${cards}
 `;
 }
 
+/**
+ * Stand-ins for the real ASP Classic / ASP.NET WebForms application that
+ * `/AngularShell/`'s iframe hosts. Additive to the existing PAGES simulator:
+ * these routes exist to exercise the legacy-container container (§2 of
+ * ANGULAR_SHELL_COEXISTENCE_PLAN.md), not to replace or resemble the
+ * federation demo pages above.
+ *
+ * `/legacy-page.aspx` deliberately embeds the same `data-angular-feature`
+ * contract the real host pages use, to prove the combined flow: AngularShell
+ * -> iframe -> legacy page -> the existing federation shell -> a provider.
+ */
+const LEGACY_NAV = `
+      <a href="/default.asp">/default.asp</a>
+      <a href="/legacy-page.asp">/legacy-page.asp</a>
+      <a href="/legacy-page.aspx">/legacy-page.aspx</a>`;
+
+const LEGACY_STYLES = `
+      body { margin: 0; font-family: system-ui, sans-serif; background: #fffbea; }
+      .chrome { background: #7a4b00; color: #fff; padding: 0.75rem 1.25rem; display: flex; gap: 1.25rem; align-items: baseline; flex-wrap: wrap; }
+      .chrome a { color: #ffe2ad; font-size: 0.875rem; }
+      main { margin: 1rem; max-width: 44rem; }
+      form { margin: 1rem 0; }
+      #angular-page-host { margin-top: 1.5rem; border-top: 1px dashed #cbb; padding-top: 1rem; }
+`;
+
+function renderLegacyChrome(title, bodyHtml) {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>${htmlEncode(title)} — legacy simulator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>${LEGACY_STYLES}</style>
+  </head>
+  <body>
+    <div class="chrome">
+      <strong>${htmlEncode(title)}</strong>
+      ${LEGACY_NAV}
+    </div>
+    <main>
+${bodyHtml}
+    </main>
+  </body>
+</html>
+`;
+}
+
+/**
+ * A same-origin popup opened from a direct click, and a same-origin download
+ * link — both exist to be exercised by an automated test, not by a human
+ * reading this simulator.
+ */
+function renderDefaultAsp() {
+  return renderLegacyChrome(
+    'Legacy application home (/default.asp)',
+    `      <p>Stands in for the real ASP Classic entry page loaded into legacy-container's iframe.</p>
+      <form method="post" action="/default.asp">
+        <label>Postback-style form <input name="q" autocomplete="off" /></label>
+        <button type="submit">Submit</button>
+      </form>
+      <p>
+        <a href="#" id="popup-link" onclick="window.open('/legacy-page.asp?popup=1','_blank','width=420,height=320'); return false;">Open popup</a>
+        &nbsp;|&nbsp;
+        <a href="/downloads/sample.txt" id="download-link" download>Download sample file</a>
+      </p>`
+  );
+}
+
+function renderLegacyAsp(query) {
+  const isPopup = query.get('popup') === '1';
+  return renderLegacyChrome(
+    isPopup ? 'Popup (/legacy-page.asp)' : 'Classic ASP page (/legacy-page.asp)',
+    isPopup
+      ? `      <p>Opened as a popup from a direct click on /default.asp.</p>`
+      : `      <p>Stands in for an ordinary Classic ASP page reached by ASP-to-ASP navigation.</p>`
+  );
+}
+
+function renderLegacyAspx() {
+  return renderLegacyChrome(
+    'ASPX page (/legacy-page.aspx)',
+    `      <p>Stands in for an ASPX page reached by ASP-to-ASPX navigation. It also hosts a
+      federated Angular feature through the existing, unmodified shell contract:</p>
+
+      <main id="angular-page-host" data-angular-feature="pricing-search">
+        <ca-pricing-search customer-id="1001"></ca-pricing-search>
+      </main>
+
+      <script type="application/json" id="angular-bootstrap-context">
+        { "assetBasePath": "/ui" }
+      </script>
+      <script type="esms-options">{ "shimMode": true }</script>
+      <script type="module" src="/ui/shell/current/polyfills.js"></script>
+      <script type="module-shim" src="/ui/shell/current/main.js"></script>`
+  );
+}
+
 function serveStatic(res, filePath, relative) {
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
     res.writeHead(404, { 'content-type': 'text/plain' });
@@ -271,6 +369,51 @@ function serveStatic(res, filePath, relative) {
   fs.createReadStream(filePath).pipe(res);
 }
 
+/**
+ * Serves legacy-container's published `current` pointer at `/AngularShell/*`
+ * — unversioned in the URL, matching the IIS layout in
+ * ANGULAR_APP_SHELL_ARCHITECTURE.md §11-12 (`/AngularShell/index.html`, not
+ * `/AngularShell/current/index.html`).
+ *
+ * Unlike the shell (unhashed filenames by design — see the `serveStatic`
+ * mutability comment above), legacy-container is built with content-hashed
+ * JS/CSS, so only `index.html` and the unhashed `favicon.ico` need to
+ * revalidate; the hashed chunks are genuinely immutable even though the
+ * `current` pointer they live under can be replaced by a promotion.
+ */
+function serveContainerStatic(res, filePath, relative) {
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    res.writeHead(404, { 'content-type': 'text/plain' });
+    return res.end('not found');
+  }
+  const mutable = relative === 'index.html' || relative === 'favicon.ico';
+  res.writeHead(200, {
+    'content-type': MIME[path.extname(filePath)] ?? 'application/octet-stream',
+    'cache-control': mutable ? 'no-cache' : 'public, max-age=31536000, immutable',
+  });
+  fs.createReadStream(filePath).pipe(res);
+}
+
+/**
+ * Whether `resolved` is contained within `base`. Prefix-string comparison
+ * (`resolved.startsWith(base)`) is unsound: a sibling directory whose name
+ * merely starts with the same characters — base `publish/ui` and a crafted
+ * path resolving to `publish/ui-evil/secret` — passes a naive startsWith
+ * check without being inside `base` at all. `path.relative` is exact.
+ *
+ * Escaping is specifically "the relative path IS `..`, or starts with a
+ * `..` SEGMENT" (`'..' + path.sep`) — not "the string starts with the two
+ * characters `..`". The latter would also reject a real, legitimate file
+ * inside `base` whose name happens to start with dots, e.g. `..hidden` or
+ * `...archive` — those produce a relative path like `'..hidden'`, which
+ * starts with the characters `..` but is not a `..` segment at all.
+ */
+function isContainedPath(base, resolved) {
+  const rel = path.relative(base, resolved);
+  const escapes = rel === '..' || rel.startsWith('..' + path.sep);
+  return !escapes && !path.isAbsolute(rel);
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const pathname = decodeURIComponent(url.pathname);
@@ -279,11 +422,48 @@ const server = http.createServer((req, res) => {
     const relative = pathname.slice('/ui/'.length);
     const resolved = path.join(publishRoot, relative);
     // Contain traversal: a crafted path must not escape the published tree.
-    if (!resolved.startsWith(publishRoot)) {
+    if (!isContainedPath(publishRoot, resolved)) {
       res.writeHead(403, { 'content-type': 'text/plain' });
       return res.end('forbidden');
     }
     return serveStatic(res, resolved, relative);
+  }
+
+  if (pathname === '/AngularShell' || pathname === '/AngularShell/') {
+    return serveContainerStatic(res, path.join(containerPublishRoot, 'current', 'index.html'), 'index.html');
+  }
+  if (pathname.startsWith('/AngularShell/')) {
+    const relative = pathname.slice('/AngularShell/'.length);
+    const currentDir = path.join(containerPublishRoot, 'current');
+    const resolved = path.join(currentDir, relative);
+    if (!isContainedPath(currentDir, resolved)) {
+      res.writeHead(403, { 'content-type': 'text/plain' });
+      return res.end('forbidden');
+    }
+    return serveContainerStatic(res, resolved, relative);
+  }
+
+  // Legacy application stand-ins hosted by legacy-container's iframe. See the
+  // LEGACY_* helpers above for what each one proves.
+  if (pathname === '/default.asp') {
+    res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-store' });
+    return res.end(renderDefaultAsp());
+  }
+  if (pathname === '/legacy-page.asp') {
+    res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-store' });
+    return res.end(renderLegacyAsp(url.searchParams));
+  }
+  if (pathname === '/legacy-page.aspx') {
+    res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-store' });
+    return res.end(renderLegacyAspx());
+  }
+  if (pathname === '/downloads/sample.txt') {
+    res.writeHead(200, {
+      'content-type': 'text/plain; charset=utf-8',
+      'content-disposition': 'attachment; filename="sample.txt"',
+      'cache-control': 'no-store',
+    });
+    return res.end('Stand-in download from the legacy application simulator.\n');
   }
 
   // The landing page hosts no feature, so it exercises the shell's idle path.
@@ -308,4 +488,6 @@ server.listen(PORT, () => {
   for (const key of Object.keys(PAGES)) {
     console.info(`[host]   http://localhost:${PORT}/${key}.html`);
   }
+  console.info(`[host]   http://localhost:${PORT}/AngularShell/     (legacy-container, requires 'npm run release:container' first)`);
+  console.info(`[host]   http://localhost:${PORT}/default.asp       (legacy simulator, hosted by the AngularShell iframe)`);
 });

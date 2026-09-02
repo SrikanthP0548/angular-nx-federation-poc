@@ -46,6 +46,11 @@ Thumbs.db
 
 .angular
 
+# Windows/.NET outputs for the isolated real-IIS harness
+legacy-harness/**/bin/
+legacy-harness/**/obj/
+legacy-harness/**/*.user
+
 .nx/polygraph
 # Published federation artifacts (build output). Any provider directory, so a
 # new provider is covered without editing this file. The environment manifest
@@ -53,7 +58,15 @@ Thumbs.db
 # and the seed state the POC starts from.
 publish/ui/*/
 
+# Published legacy-container artifacts. Same reasoning as publish/ui/*/ above;
+# unlike the federation manifest, legacy-container has no tracked control-plane
+# file to preserve — see "Explicit Phase-1 decisions" in
+# ANGULAR_SHELL_COEXISTENCE_PLAN.md.
+publish/angular-shell/*/
+
 # Playwright
 /playwright-report
 /test-results
 /blob-report
+
+__screenshots__/

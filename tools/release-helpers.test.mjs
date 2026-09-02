@@ -7,8 +7,12 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   activateShellCurrent,
+  beginVersionPublish,
+  checksumTree,
   checkWorkingTree,
   filterReleaseOutputPaths,
+  finalizeVersionPublish,
+  isValidPublishVersion,
   syncShellVersion,
   verifyChecksums,
 } from './release-helpers.mjs';
@@ -159,6 +163,165 @@ test('verifyChecksums reports a listed file that is missing entirely', () => {
     const problems = verifyChecksums(dir, { 'remoteEntry.json': 'sha256-deadbeef' });
     assert.equal(problems.length, 1);
     assert.match(problems[0], /missing from the artifact/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// isValidPublishVersion — the gate before a version becomes a directory name.
+// ---------------------------------------------------------------------------
+
+test('isValidPublishVersion accepts plain and CI-style SemVer', () => {
+  assert.equal(isValidPublishVersion('1.0.0'), true);
+  assert.equal(isValidPublishVersion('0.0.0-ci'), true); // the exact value ci.yml's ARTIFACT_VERSION uses
+  assert.equal(isValidPublishVersion('1.2.3-beta.1+build.42'), true);
+});
+
+test('isValidPublishVersion rejects path traversal and separators', () => {
+  for (const bad of ['../1.0.0', '..\\1.0.0', '1.0.0/../../etc', 'a/b', 'a\\b', '1.0.0/']) {
+    assert.equal(isValidPublishVersion(bad), false, `expected "${bad}" to be rejected`);
+  }
+});
+
+test('isValidPublishVersion rejects absolute paths', () => {
+  assert.equal(isValidPublishVersion('/etc/passwd'), false);
+  assert.equal(isValidPublishVersion('C:\\Windows'), false);
+});
+
+test('isValidPublishVersion rejects encoded traversal forms', () => {
+  for (const bad of ['%2e%2e%2f', '..%2f', '%2e%2e/1.0.0', '1.0.0%00']) {
+    assert.equal(isValidPublishVersion(bad), false, `expected "${bad}" to be rejected`);
+  }
+});
+
+test('isValidPublishVersion rejects non-SemVer strings and non-string input', () => {
+  for (const bad of ['1.0', '1.0.0.0', 'v1.0.0', 'latest', 'current', '', ' 1.0.0', '1.0.0 ']) {
+    assert.equal(isValidPublishVersion(bad), false, `expected "${bad}" to be rejected`);
+  }
+  assert.equal(isValidPublishVersion(undefined), false);
+  assert.equal(isValidPublishVersion(null), false);
+});
+
+// ---------------------------------------------------------------------------
+// beginVersionPublish / finalizeVersionPublish — staged, atomic version
+// publish, so an interrupted copy never leaves a partial version directory
+// blocking a retry.
+// ---------------------------------------------------------------------------
+
+test('beginVersionPublish copies into a staging dir, not the final version path', () => {
+  const publishDir = tempDir('stage-publish-');
+  const source = tempDir('stage-source-');
+  try {
+    fs.writeFileSync(path.join(source, 'main.js'), 'x');
+    const staging = beginVersionPublish(publishDir, source, '1.0.0', { pid: 4242 });
+
+    assert.equal(staging, path.join(publishDir, '.1.0.0.tmp-4242'));
+    assert.equal(fs.existsSync(path.join(publishDir, '1.0.0')), false);
+    assert.equal(fs.readFileSync(path.join(staging, 'main.js'), 'utf8'), 'x');
+  } finally {
+    fs.rmSync(publishDir, { recursive: true, force: true });
+    fs.rmSync(source, { recursive: true, force: true });
+  }
+});
+
+test('beginVersionPublish refuses a version that already exists', () => {
+  const publishDir = tempDir('stage-publish-exists-');
+  const source = tempDir('stage-source-exists-');
+  try {
+    fs.mkdirSync(path.join(publishDir, '1.0.0'));
+    fs.writeFileSync(path.join(source, 'main.js'), 'x');
+    assert.throws(() => beginVersionPublish(publishDir, source, '1.0.0'), /immutable/);
+  } finally {
+    fs.rmSync(publishDir, { recursive: true, force: true });
+    fs.rmSync(source, { recursive: true, force: true });
+  }
+});
+
+test('finalizeVersionPublish renames staging into the final version path', () => {
+  const publishDir = tempDir('finalize-publish-');
+  try {
+    const staging = path.join(publishDir, '.1.0.0.tmp-1');
+    fs.mkdirSync(staging, { recursive: true });
+    fs.writeFileSync(path.join(staging, 'build-metadata.json'), '{}');
+
+    const target = finalizeVersionPublish(publishDir, staging, '1.0.0');
+
+    assert.equal(target, path.join(publishDir, '1.0.0'));
+    assert.equal(fs.existsSync(staging), false);
+    assert.equal(fs.readFileSync(path.join(target, 'build-metadata.json'), 'utf8'), '{}');
+  } finally {
+    fs.rmSync(publishDir, { recursive: true, force: true });
+  }
+});
+
+test('finalizeVersionPublish refuses and cleans up staging if the version now exists (the race window)', () => {
+  const publishDir = tempDir('finalize-race-');
+  try {
+    const staging = path.join(publishDir, '.1.0.0.tmp-1');
+    fs.mkdirSync(staging, { recursive: true });
+    // Simulate a second process having published this version in between
+    // this process's own pre-check and this call.
+    fs.mkdirSync(path.join(publishDir, '1.0.0'), { recursive: true });
+
+    assert.throws(() => finalizeVersionPublish(publishDir, staging, '1.0.0'), /immutable/);
+    assert.equal(fs.existsSync(staging), false); // cleaned up, not left orphaned
+  } finally {
+    fs.rmSync(publishDir, { recursive: true, force: true });
+  }
+});
+
+test('an interrupted publish (begin without finalize) never leaves a version at its real name', () => {
+  const publishDir = tempDir('interrupted-publish-');
+  const source = tempDir('interrupted-source-');
+  try {
+    fs.writeFileSync(path.join(source, 'main.js'), 'x');
+    beginVersionPublish(publishDir, source, '1.0.0', { pid: 999 }); // "crash" before finalize
+
+    // A retry of the exact same version must not be blocked by the partial
+    // artifact — this is the bug being fixed: it would previously have
+    // copied straight into <publishDir>/1.0.0, and a second attempt would
+    // see that path already exists and refuse forever.
+    assert.equal(fs.existsSync(path.join(publishDir, '1.0.0')), false);
+    const staging = beginVersionPublish(publishDir, source, '1.0.0', { pid: 999 });
+    const target = finalizeVersionPublish(publishDir, staging, '1.0.0');
+    assert.equal(fs.existsSync(target), true);
+  } finally {
+    fs.rmSync(publishDir, { recursive: true, force: true });
+    fs.rmSync(source, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// checksumTree — the hashing walk publish scripts write into checksums.json.
+// ---------------------------------------------------------------------------
+
+test('checksumTree hashes every file, keyed by path relative to base', () => {
+  const dir = tempDir('checksum-tree-');
+  try {
+    fs.writeFileSync(path.join(dir, 'main.js'), 'console.log(1);');
+    fs.mkdirSync(path.join(dir, 'assets'));
+    fs.writeFileSync(path.join(dir, 'assets', 'icon.svg'), '<svg></svg>');
+
+    const result = checksumTree(dir);
+
+    assert.deepEqual(Object.keys(result).sort(), ['assets/icon.svg', 'main.js']);
+    assert.equal(result['main.js'], `sha256-${createHash('sha256').update('console.log(1);').digest('hex')}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('checksumTree output round-trips through verifyChecksums with no problems reported', () => {
+  const dir = tempDir('checksum-tree-roundtrip-');
+  try {
+    fs.writeFileSync(path.join(dir, 'index.html'), '<!doctype html>');
+    fs.writeFileSync(path.join(dir, 'checksums.json'), '{}'); // written after hashing; excluded from its own check
+
+    const checksums = checksumTree(dir);
+    fs.writeFileSync(path.join(dir, 'checksums.json'), JSON.stringify(checksums));
+
+    assert.deepEqual(verifyChecksums(dir, checksums), []);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
