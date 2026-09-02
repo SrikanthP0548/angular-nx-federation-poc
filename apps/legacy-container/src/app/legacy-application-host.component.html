@@ -1,1 +1,6 @@
-<iframe class="legacy-app-frame" [src]="legacyUrlSafe" title="Application"></iframe>
+<iframe
+  class="legacy-app-frame"
+  [src]="legacyUrlSafe"
+  title="Application"
+  (load)="onLegacyFrameLoad($event)"
+></iframe>
