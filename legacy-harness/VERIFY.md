@@ -9,12 +9,6 @@ IIS/WebForms/Classic ASP/StateServer/COM mechanics needed by
 Run these in elevated Windows PowerShell after transferring the repository
 bundle to the Windows host:
 
-`New-LegacyHarnessSite.ps1` supports both Windows Server and Windows 10/11. It
-installs any missing IIS, Classic ASP, ASP.NET 4.x, management-scripting, and
-WAS components with the feature-management commands provided by that operating
-system. If Windows reports that a restart is required, restart before running
-the script again.
-
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 
