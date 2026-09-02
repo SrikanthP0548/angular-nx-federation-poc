@@ -13,7 +13,8 @@
     "verify:bundle": "node tools/verify-bundle.mjs",
     "promote": "node tools/promote-manifest.mjs",
     "test:e2e:all": "nx run host-e2e:e2e-all",
-    "release:container": "BUILD_RUN_ID=run-$(date +%s)-$$ ARTIFACT_VERSION=${ARTIFACT_VERSION:?set ARTIFACT_VERSION, e.g. ARTIFACT_VERSION=1.0.0 npm run release:container} nx run legacy-container:publish"
+    "release:container": "node tools/release-container.mjs",
+    "release:container:local": "node tools/release-container.mjs --local"
   },
   "private": true,
   "dependencies": {

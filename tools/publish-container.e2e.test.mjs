@@ -41,11 +41,17 @@ import os from 'node:os';
 import path from 'node:path';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
-const TOOLS_FILES = ['publish-container.mjs', 'release-helpers.mjs', 'build-marker.mjs', 'stamp-build.mjs'];
+const TOOLS_FILES = [
+  'publish-container.mjs',
+  'release-helpers.mjs',
+  'build-marker.mjs',
+  'stamp-build.mjs',
+];
 
 let tmpRoot;
 
-const distDir = () => path.join(tmpRoot, 'dist', 'apps', 'legacy-container', 'browser');
+const distDir = () =>
+  path.join(tmpRoot, 'dist', 'apps', 'legacy-container', 'browser');
 const publishDir = () => path.join(tmpRoot, 'publish', 'angular-shell');
 const currentDir = () => path.join(publishDir(), 'current');
 
@@ -60,24 +66,35 @@ function buildFixtureDist() {
   const dir = distDir();
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'index.html'), '<!doctype html><html></html>');
+  fs.writeFileSync(
+    path.join(dir, 'index.html'),
+    '<!doctype html><html></html>',
+  );
   fs.writeFileSync(path.join(dir, 'main.js'), 'console.log("fixture");');
 }
 
 function stamp(runId) {
-  execFileSync('node', ['tools/stamp-build.mjs', 'dist/apps/legacy-container/browser'], {
-    cwd: tmpRoot,
-    env: { ...process.env, BUILD_RUN_ID: runId },
-  });
+  execFileSync(
+    'node',
+    ['tools/stamp-build.mjs', 'dist/apps/legacy-container/browser'],
+    {
+      cwd: tmpRoot,
+      env: { ...process.env, BUILD_RUN_ID: runId },
+    },
+  );
 }
 
-function runPublish(args, { runId = 'e2e-run', allowDirty = false } = {}) {
+function runPublish(
+  args,
+  { runId = 'e2e-run', allowDirty = false, versionEnv = '' } = {},
+) {
   return execFileSync('node', ['tools/publish-container.mjs', ...args], {
     cwd: tmpRoot,
     encoding: 'utf8',
     env: {
       ...process.env,
       BUILD_RUN_ID: runId,
+      ARTIFACT_VERSION: versionEnv,
       // Explicitly cleared, not just omitted: this test's own env must not
       // inherit ALLOW_DIRTY_PUBLISH from whatever shell invoked `npm test`.
       ALLOW_DIRTY_PUBLISH: allowDirty ? '1' : '',
@@ -89,7 +106,9 @@ function runPublish(args, { runId = 'e2e-run', allowDirty = false } = {}) {
 function expectPublishToFail(args, opts) {
   try {
     runPublish(args, opts);
-    assert.fail(`expected "node tools/publish-container.mjs ${args.join(' ')}" to fail, but it succeeded`);
+    assert.fail(
+      `expected "node tools/publish-container.mjs ${args.join(' ')}" to fail, but it succeeded`,
+    );
   } catch (err) {
     if (err.stderr === undefined) throw err; // a real assertion failure, not the expected process failure
     return err;
@@ -101,11 +120,18 @@ before(() => {
 
   fs.mkdirSync(path.join(tmpRoot, 'tools'), { recursive: true });
   for (const file of TOOLS_FILES) {
-    fs.cpSync(path.join(repoRoot, 'tools', file), path.join(tmpRoot, 'tools', file));
+    fs.cpSync(
+      path.join(repoRoot, 'tools', file),
+      path.join(tmpRoot, 'tools', file),
+    );
   }
   // publish-container.mjs reads node_modules/@angular/core/package.json for
   // the recorded Angular version — a symlink avoids copying node_modules.
-  fs.symlinkSync(path.join(repoRoot, 'node_modules'), path.join(tmpRoot, 'node_modules'), 'dir');
+  fs.symlinkSync(
+    path.join(repoRoot, 'node_modules'),
+    path.join(tmpRoot, 'node_modules'),
+    'dir',
+  );
 
   // Mirrors the real repo's own .gitignore treatment of these two paths, so
   // fixture builds and publishes don't make the tree look dirty on their
@@ -126,7 +152,11 @@ after(() => {
 test('rejects a missing version argument', () => {
   const err = (() => {
     try {
-      execFileSync('node', ['tools/publish-container.mjs'], { cwd: tmpRoot, encoding: 'utf8' });
+      execFileSync('node', ['tools/publish-container.mjs'], {
+        cwd: tmpRoot,
+        encoding: 'utf8',
+        env: { ...process.env, ARTIFACT_VERSION: '' },
+      });
       assert.fail('expected rejection');
     } catch (e) {
       return e;
@@ -135,12 +165,31 @@ test('rejects a missing version argument', () => {
   assert.match(err.stderr, /usage: node tools\/publish-container\.mjs/);
 });
 
+test('accepts ARTIFACT_VERSION without shell-specific variable expansion', () => {
+  const version = testVersion('env');
+  buildFixtureDist();
+  stamp('run-env');
+
+  const stdout = runPublish([], { runId: 'run-env', versionEnv: version });
+
+  assert.match(
+    stdout,
+    new RegExp(
+      `published legacy-container@${version.replace(/[.+]/g, '\\$&')}`,
+    ),
+  );
+  assert.equal(fs.existsSync(path.join(publishDir(), version)), true);
+});
+
 test('rejects an invalid/traversing version before touching the filesystem', () => {
   buildFixtureDist();
   stamp('run-invalid');
   const err = expectPublishToFail(['../../../tmp/escaped']);
   assert.match(err.stderr, /invalid version/);
-  assert.equal(fs.existsSync(path.join(tmpRoot, '..', 'tmp', 'escaped')), false);
+  assert.equal(
+    fs.existsSync(path.join(tmpRoot, '..', 'tmp', 'escaped')),
+    false,
+  );
 });
 
 test('rejects a missing build marker', () => {
@@ -152,7 +201,9 @@ test('rejects a missing build marker', () => {
 test('rejects a build stamped by a different run', () => {
   buildFixtureDist();
   stamp('run-a');
-  const err = expectPublishToFail([testVersion('wrongrun')], { runId: 'run-c' });
+  const err = expectPublishToFail([testVersion('wrongrun')], {
+    runId: 'run-c',
+  });
   assert.match(err.stderr, /was built by run/);
 });
 
@@ -162,7 +213,10 @@ test('rejects a dirty working tree unless explicitly overridden — genuinely, n
   try {
     buildFixtureDist();
     stamp('run-dirty');
-    const err = expectPublishToFail([testVersion('dirty')], { runId: 'run-dirty', allowDirty: false });
+    const err = expectPublishToFail([testVersion('dirty')], {
+      runId: 'run-dirty',
+      allowDirty: false,
+    });
     assert.match(err.stderr, /working tree is not clean/);
     // The whole point of the isolated temp git repo: this proves the
     // rejection is actually tied to the marker THIS test created, not to
@@ -190,12 +244,19 @@ test('a successful publish writes correct metadata and checksums, and activates 
   buildFixtureDist();
   stamp('run-ok');
   const stdout = runPublish([version], { runId: 'run-ok' });
-  assert.match(stdout, new RegExp(`published legacy-container@${version.replace(/[.+]/g, '\\$&')}`));
+  assert.match(
+    stdout,
+    new RegExp(
+      `published legacy-container@${version.replace(/[.+]/g, '\\$&')}`,
+    ),
+  );
 
   const versionDir = path.join(publishDir(), version);
   assert.equal(fs.existsSync(versionDir), true);
 
-  const metadata = JSON.parse(fs.readFileSync(path.join(versionDir, 'build-metadata.json'), 'utf8'));
+  const metadata = JSON.parse(
+    fs.readFileSync(path.join(versionDir, 'build-metadata.json'), 'utf8'),
+  );
   assert.equal(metadata.artifact, 'legacy-container');
   assert.equal(metadata.version, version);
   // The temp repo is genuinely clean at this point (dist/publish
@@ -205,10 +266,18 @@ test('a successful publish writes correct metadata and checksums, and activates 
   assert.equal(typeof metadata.builtAt, 'string');
   assert.equal(typeof metadata.commit, 'string');
 
-  const checksums = JSON.parse(fs.readFileSync(path.join(versionDir, 'checksums.json'), 'utf8'));
-  assert.deepEqual(Object.keys(checksums).sort(), ['build-metadata.json', 'index.html', 'main.js']);
+  const checksums = JSON.parse(
+    fs.readFileSync(path.join(versionDir, 'checksums.json'), 'utf8'),
+  );
+  assert.deepEqual(Object.keys(checksums).sort(), [
+    'build-metadata.json',
+    'index.html',
+    'main.js',
+  ]);
   for (const [relative, expected] of Object.entries(checksums)) {
-    const actual = `sha256-${createHash('sha256').update(fs.readFileSync(path.join(versionDir, relative))).digest('hex')}`;
+    const actual = `sha256-${createHash('sha256')
+      .update(fs.readFileSync(path.join(versionDir, relative)))
+      .digest('hex')}`;
     assert.equal(actual, expected, `checksum mismatch for ${relative}`);
   }
 
@@ -217,7 +286,13 @@ test('a successful publish writes correct metadata and checksums, and activates 
   assert.equal(fs.existsSync(path.join(versionDir, '.build-run.json')), false);
 
   // current now serves exactly this version's content.
-  const currentIndex = fs.readFileSync(path.join(currentDir(), 'index.html'), 'utf8');
-  const versionIndex = fs.readFileSync(path.join(versionDir, 'index.html'), 'utf8');
+  const currentIndex = fs.readFileSync(
+    path.join(currentDir(), 'index.html'),
+    'utf8',
+  );
+  const versionIndex = fs.readFileSync(
+    path.join(versionDir, 'index.html'),
+    'utf8',
+  );
   assert.equal(currentIndex, versionIndex);
 });
