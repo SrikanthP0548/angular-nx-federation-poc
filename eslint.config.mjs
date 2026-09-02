@@ -57,6 +57,16 @@ export default [
                             ]
                         },
                         {
+                            // legacy-container hosts the legacy app in an iframe. Same
+                            // ceiling as type:shell: a composition/hosting layer with no
+                            // legitimate reason to depend on page or provider code.
+                            sourceTag: "type:container",
+                            onlyDependOnLibsWithTags: [
+                                "type:shared-core",
+                                "type:util"
+                            ]
+                        },
+                        {
                             sourceTag: "type:provider",
                             onlyDependOnLibsWithTags: [
                                 "type:page",

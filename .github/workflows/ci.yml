@@ -64,3 +64,51 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+  # Deliberately separate from `main`, not an extra step in it: legacy-container
+  # is published independently (`npm run release:container`, never
+  # `npm run release`), and a failure here must never read as a federation
+  # regression, nor gate on one. See "Add a separate CI job" in
+  # ANGULAR_SHELL_COEXISTENCE_PLAN.md.
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          filter: tree:0
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chrome msedge
+
+      - run: npx nx run-many -t lint test build -p legacy-container host-e2e
+
+      # `nx run-many -t test` runs each project's own test target; it does not
+      # invoke tools/*.test.mjs (that's the root `npm test` script's job, not
+      # tied to any project). Run it explicitly so publish-container.mjs's own
+      # end-to-end tests actually execute in CI, not just locally.
+      - run: node --test tools/publish-container.e2e.test.mjs
+
+      - name: Publish legacy-container
+        env:
+          ARTIFACT_VERSION: 0.0.0-ci
+        run: npm run release:container
+
+      # Same host simulator as `main`'s e2e-all, but the container-only spec
+      # suite and readiness probe (/AngularShell/, not /ui/manifest.json).
+      - run: npx nx run host-e2e:e2e-container-all
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-container
+          path: |
+            playwright-report-container/
+            test-results/
+          retention-days: 7

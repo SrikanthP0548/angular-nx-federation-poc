@@ -16,6 +16,15 @@ const baseURL = process.env['BASE_URL'] || 'http://localhost:44300';
 
 export default defineConfig({
   testDir: './src',
+  // container-e2e/ and real-iis-e2e/ each have their own config
+  // (playwright.container.config.mts) and CI job: they exercise
+  // legacy-container and, opt-in via EXTERNAL_BASE_URL, a real IIS box —
+  // published/reached independently of `npm run release`. Without this,
+  // testDir's default recursion would silently fold those specs into this
+  // suite's result, changing what "green" means here for anyone who hasn't
+  // published the container or pointed at a real IIS host — exactly what
+  // keeping them isolated is for.
+  testIgnore: ['**/container-e2e/**', '**/real-iis-e2e/**'],
   fullyParallel: false,
   forbidOnly: !!process.env['CI'],
   retries: 0,

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>legacy-container</title>
+    <base href="/AngularShell/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+  </head>
+  <body>
+    <app-root></app-root>
+    <script>
+      // Covers a different failure mode than startup-failure.ts's
+      // bootstrapApplication().catch(): that only runs once main.js has
+      // loaded and started executing. If main.js itself fails to load
+      // (network error, 404, blocked by a header), that handler never runs
+      // either — nothing does, and the page stays blank forever. This is
+      // the one fallback that can react to that, so it can't import
+      // startup-failure.ts (the module system may never initialize) and
+      // necessarily duplicates a small piece of its rendering, inline.
+      //
+      // Capture phase is required: a <script src> load failure's "error"
+      // event does not bubble, so a non-capturing listener never sees it.
+      window.addEventListener(
+        'error',
+        function (event) {
+          var target = event.target;
+          if (!target || target.tagName !== 'SCRIPT' || !/\/main-.*\.js$/.test(target.src || '')) return;
+          var id = Math.random().toString(36).slice(2, 10);
+          console.error('[legacy-container] startup failed — reference ' + id + ' (script failed to load)');
+          document.body.innerHTML =
+            '<div role="alert" style="font:14px/1.5 system-ui, sans-serif; padding:2rem; max-width:32rem; margin:3rem auto; color:#7a1a1a;">' +
+            '<p style="margin:0 0 0.5rem;font-weight:600;">This application failed to start.</p>' +
+            '<p style="margin:0;">Reloading the page may fix this. If it keeps happening, report reference <code>' +
+            id +
+            '</code>.</p></div>';
+        },
+        true
+      );
+    </script>
+  </body>
+</html>

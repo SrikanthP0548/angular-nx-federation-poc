@@ -1,0 +1,96 @@
+{
+  "name": "legacy-container",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "prefix": "app",
+  "sourceRoot": "apps/legacy-container/src",
+  "tags": ["type:container"],
+  "targets": {
+    "build": {
+      "executor": "@angular/build:application",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/legacy-container",
+        "browser": "apps/legacy-container/src/main.ts",
+        "tsConfig": "apps/legacy-container/tsconfig.app.json",
+        "assets": [
+          {
+            "glob": "**/*",
+            "input": "apps/legacy-container/public"
+          }
+        ],
+        "styles": ["apps/legacy-container/src/styles.css"]
+      },
+      "configurations": {
+        "production": {
+          "budgets": [
+            {
+              "type": "initial",
+              "maximumWarning": "500kb",
+              "maximumError": "1mb"
+            },
+            {
+              "type": "anyComponentStyle",
+              "maximumWarning": "4kb",
+              "maximumError": "8kb"
+            }
+          ],
+          "outputHashing": "all"
+        },
+        "development": {
+          "optimization": false,
+          "extractLicenses": false,
+          "sourceMap": true
+        }
+      }
+    },
+    "serve": {
+      "continuous": true,
+      "executor": "@angular/build:dev-server",
+      "defaultConfiguration": "development",
+      "configurations": {
+        "production": {
+          "buildTarget": "legacy-container:build:production"
+        },
+        "development": {
+          "buildTarget": "legacy-container:build:development"
+        }
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    },
+    "test": {
+      "executor": "@angular/build:unit-test",
+      "options": {
+        "watch": false
+      }
+    },
+    "serve-static": {
+      "continuous": true,
+      "executor": "@nx/web:file-server",
+      "options": {
+        "buildTarget": "legacy-container:build",
+        "staticFilePath": "dist/apps/legacy-container/browser",
+        "spa": true
+      }
+    },
+    "stamp": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "cache": false,
+      "options": {
+        "command": "node tools/stamp-build.mjs dist/apps/legacy-container/browser"
+      }
+    },
+    "publish": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["stamp"],
+      "cache": false,
+      "options": {
+        "command": "node tools/publish-container.mjs \"$ARTIFACT_VERSION\""
+      }
+    }
+  }
+}

@@ -10,7 +10,8 @@
     "shell",
     "pricing-provider",
     "feature-two-provider",
-    "feature-three-provider"
+    "feature-three-provider",
+    "legacy-container"
   ],
   "targets": {
     "e2e": {
@@ -26,6 +27,18 @@
       "executor": "nx:run-commands",
       "options": {
         "command": "npx playwright test --config apps/host-e2e/playwright.config.mts"
+      }
+    },
+    "e2e-container": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx playwright test --config apps/host-e2e/playwright.container.config.mts --project=chrome"
+      }
+    },
+    "e2e-container-all": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx playwright test --config apps/host-e2e/playwright.container.config.mts"
       }
     }
   }

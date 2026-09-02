@@ -1,0 +1,40 @@
+<%@ Master Language="C#" CodeBehind="Site.Master.cs" Inherits="LegacyWeb.SiteMaster" %>
+<!doctype html>
+<html lang="en">
+  <head runat="server">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><asp:ContentPlaceHolder ID="PageTitle" runat="server">Legacy harness</asp:ContentPlaceHolder></title>
+    <link rel="stylesheet" href="/ui/shell/current/styles.css" />
+    <style>
+      body { margin: 0; font-family: system-ui, sans-serif; background: #fffbea; }
+      .chrome { background: #7a4b00; color: #fff; padding: .75rem 1.25rem; display: flex; gap: 1.25rem; align-items: baseline; flex-wrap: wrap; }
+      .chrome a { color: #ffe2ad; font-size: .875rem; }
+      main { margin: 1rem; max-width: 52rem; }
+      button { margin-right: .5rem; }
+      #angular-page-host { margin-top: 1.5rem; border-top: 1px dashed #cbb; padding-top: 1rem; }
+    </style>
+    <asp:ContentPlaceHolder ID="AngularHead" runat="server" />
+  </head>
+  <body>
+    <form id="legacyForm" runat="server">
+      <header class="chrome">
+        <strong>ASPX page (/legacy-page.aspx)</strong>
+        <a href="/default.asp">/default.asp</a>
+        <a href="/legacy-page.asp">/legacy-page.asp</a>
+        <a href="/legacy-page.aspx">/legacy-page.aspx</a>
+        <a href="/Logout.aspx">Logout</a>
+      </header>
+      <main>
+        <asp:ContentPlaceHolder ID="PageContent" runat="server" />
+      </main>
+    </form>
+
+    <script type="application/json" id="angular-bootstrap-context">
+      { "assetBasePath": "/ui" }
+    </script>
+    <script type="esms-options">{ "shimMode": true }</script>
+    <script type="module" src="/ui/shell/current/polyfills.js"></script>
+    <script type="module-shim" src="/ui/shell/current/main.js"></script>
+  </body>
+</html>
