@@ -16,41 +16,75 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     throw 'Run this script from an elevated PowerShell session.'
 }
 
-Import-Module ServerManager
 $requiredFeatures = @(
-    'Web-Server',
-    'Web-WebServer',
-    'Web-Common-Http',
-    'Web-Default-Doc',
-    'Web-Static-Content',
-    'Web-Http-Errors',
-    'Web-Http-Logging',
-    'Web-App-Dev',
-    'Web-Asp',
-    'Web-CGI',
-    'Web-Asp-Net45',
-    'Web-Net-Ext45',
-    'Web-ISAPI-Ext',
-    'Web-ISAPI-Filter',
-    'Web-Security',
-    'Web-Filtering',
-    'Web-Mgmt-Tools',
-    'Web-Mgmt-Console',
-    'NET-Framework-45-ASPNET',
-    'WAS',
-    'WAS-Process-Model',
-    'WAS-Config-APIs'
+    [pscustomobject]@{ Server = 'Web-Server'; Client = 'IIS-WebServerRole' }
+    [pscustomobject]@{ Server = 'Web-WebServer'; Client = 'IIS-WebServer' }
+    [pscustomobject]@{ Server = 'Web-Common-Http'; Client = 'IIS-CommonHttpFeatures' }
+    [pscustomobject]@{ Server = 'Web-Default-Doc'; Client = 'IIS-DefaultDocument' }
+    [pscustomobject]@{ Server = 'Web-Static-Content'; Client = 'IIS-StaticContent' }
+    [pscustomobject]@{ Server = 'Web-Http-Errors'; Client = 'IIS-HttpErrors' }
+    [pscustomobject]@{ Server = 'Web-Http-Logging'; Client = 'IIS-HttpLogging' }
+    [pscustomobject]@{ Server = 'Web-App-Dev'; Client = 'IIS-ApplicationDevelopment' }
+    [pscustomobject]@{ Server = 'Web-Asp'; Client = 'IIS-ASP' }
+    [pscustomobject]@{ Server = 'Web-CGI'; Client = 'IIS-CGI' }
+    [pscustomobject]@{ Server = 'Web-Asp-Net45'; Client = 'IIS-ASPNET45' }
+    [pscustomobject]@{ Server = 'Web-Net-Ext45'; Client = 'IIS-NetFxExtensibility45' }
+    [pscustomobject]@{ Server = 'Web-ISAPI-Ext'; Client = 'IIS-ISAPIExtensions' }
+    [pscustomobject]@{ Server = 'Web-ISAPI-Filter'; Client = 'IIS-ISAPIFilter' }
+    [pscustomobject]@{ Server = 'Web-Security'; Client = 'IIS-Security' }
+    [pscustomobject]@{ Server = 'Web-Filtering'; Client = 'IIS-RequestFiltering' }
+    [pscustomobject]@{ Server = 'Web-Mgmt-Tools'; Client = 'IIS-WebServerManagementTools' }
+    [pscustomobject]@{ Server = 'Web-Mgmt-Console'; Client = 'IIS-ManagementConsole' }
+    [pscustomobject]@{ Server = 'Web-Scripting-Tools'; Client = 'IIS-ManagementScriptingTools' }
+    [pscustomobject]@{ Server = 'NET-Framework-45-ASPNET'; Client = 'NetFx4Extended-ASPNET45' }
+    [pscustomobject]@{ Server = 'WAS'; Client = 'WAS-WindowsActivationService' }
+    [pscustomobject]@{ Server = 'WAS-Process-Model'; Client = 'WAS-ProcessModel' }
+    [pscustomobject]@{ Server = 'WAS-Config-APIs'; Client = 'WAS-ConfigurationAPI' }
 )
 
-$missing = @(Get-WindowsFeature -Name $requiredFeatures | Where-Object InstallState -ne 'Installed' | Select-Object -ExpandProperty Name)
-if ($missing.Count -gt 0) {
-    $result = Install-WindowsFeature -Name $missing -IncludeManagementTools
-    if (-not $result.Success) {
-        throw "Windows feature installation failed: $($result.ExitCode)"
+if ($null -ne (Get-Command Get-WindowsFeature -ErrorAction SilentlyContinue)) {
+    Import-Module ServerManager
+
+    $serverFeatures = @($requiredFeatures | Select-Object -ExpandProperty Server)
+    $missing = @(Get-WindowsFeature -Name $serverFeatures | Where-Object InstallState -ne 'Installed' | Select-Object -ExpandProperty Name)
+    if ($missing.Count -gt 0) {
+        $result = Install-WindowsFeature -Name $missing -IncludeManagementTools
+        if (-not $result.Success) {
+            throw "Windows feature installation failed: $($result.ExitCode)"
+        }
+        if ($result.RestartNeeded -eq 'Yes') {
+            throw 'Windows features installed successfully, but Windows requires a restart before site creation.'
+        }
     }
-    if ($result.RestartNeeded -eq 'Yes') {
-        throw 'Windows features installed successfully, but Windows requires a restart before site creation.'
+} elseif (
+    $null -ne (Get-Command Get-WindowsOptionalFeature -ErrorAction SilentlyContinue) -and
+    $null -ne (Get-Command Enable-WindowsOptionalFeature -ErrorAction SilentlyContinue)
+) {
+    $clientFeatures = @($requiredFeatures | Select-Object -ExpandProperty Client)
+    $featureStates = @(
+        foreach ($featureName in $clientFeatures) {
+            try {
+                Get-WindowsOptionalFeature -Online -FeatureName $featureName -ErrorAction Stop
+            } catch {
+                throw "Required Windows optional feature '$featureName' is unavailable: $($_.Exception.Message)"
+            }
+        }
+    )
+
+    $pending = @($featureStates | Where-Object State -eq 'EnablePending' | Select-Object -ExpandProperty FeatureName)
+    if ($pending.Count -gt 0) {
+        throw "Windows features are pending enablement ($($pending -join ', ')). Restart Windows, then run this script again."
     }
+
+    $missing = @($featureStates | Where-Object State -ne 'Enabled' | Select-Object -ExpandProperty FeatureName)
+    if ($missing.Count -gt 0) {
+        $result = Enable-WindowsOptionalFeature -Online -FeatureName $missing -All -NoRestart
+        if ($result.RestartNeeded) {
+            throw 'Windows features installed successfully, but Windows requires a restart before site creation.'
+        }
+    }
+} else {
+    throw 'No supported Windows feature-management commands were found. Run this script in elevated Windows PowerShell on Windows Server or Windows 10/11.'
 }
 
 Set-Service aspnet_state -StartupType Automatic
