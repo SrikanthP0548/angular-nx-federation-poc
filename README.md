@@ -106,7 +106,22 @@ On macOS or Linux, the equivalent federation release is `ARTIFACT_VERSION=1.4.0 
 
 ### Run without IIS
 
-The Node host simulator serves the published Angular assets and lightweight legacy-page stand-ins:
+For live Angular development, start the federation shell and all three providers
+with one command:
+
+```powershell
+npm start
+```
+
+Open `http://localhost:4200/`. The development-only shell header opens Pricing
+by default and switches between Pricing, Feature Two, and Feature Three. The
+provider applications run on ports `4201` through `4203` behind the shell and
+do not need to be opened directly. This standalone navigation is not included
+in the ASPX integration; each migrated ASPX page continues to select exactly
+one custom element.
+
+For the published-asset simulation, the Node host serves the Angular container
+and lightweight legacy-page stand-ins:
 
 ```powershell
 npm run start:host
