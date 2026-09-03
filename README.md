@@ -1,288 +1,176 @@
-# Angular Shell + Federated Feature Providers — Proof of Concept
+# Angular + ASP.NET Legacy Integration POC
 
-A working reference implementation of the incremental-migration architecture: a thin
-Angular shell, loaded by an ordinary host page, dynamically loads a feature provider that
-registers the page as a custom element. Feature versions are routed by a runtime manifest.
+This repository demonstrates an incremental migration from Classic ASP and ASP.NET Web Forms to Angular. The legacy application remains responsible for authentication, session state, navigation, postbacks, and downloads. Angular features are introduced page by page without turning every migrated page into a separately deployed application.
 
-The question this exists to answer is **whether migrating 150 pages means building 150
-applications.** It does not:
+## 1. Architecture
 
-| | Role | Count here | Count for 150 pages |
-|---|---|---|---|
-| **Feature library** | implementation unit — one per page | 4 | ~150 |
-| **Provider app** | deployment unit — produces `remoteEntry.json` | 3 | ~8–15 |
-| **Shell** | runtime owner and composition layer | 1 | 1 |
-| **Manifest entry** | rollout and rollback unit | 4 | ~150 |
+### Runtime topology
 
-Pages are libraries. Apps exist only where something must be deployed independently. The
-`pricing-provider` demonstrates this directly: it serves **two** pages from one artifact,
-and loading one never downloads the other.
+Everything is served from one IIS site and one browser origin:
 
-## Prerequisites
+| Public path | Physical location | Responsibility |
+|---|---|---|
+| `/` | `C:\WebAssets\LegacyHarness\site` | Classic ASP, Web Forms, login, session, downloads, and legacy navigation |
+| `/AngularShell` | `C:\WebAssets\AngularShell\current` | Thin Angular container that hosts the legacy application in an iframe |
+| `/ui` | `C:\WebAssets\ui` | Federation shell, runtime manifest, and versioned feature-provider artifacts |
 
-Node 22+. Chrome for the E2E suite. Edge is configured but **not installed on this
-machine** — `npx playwright install msedge` adds it, after which `npm run test:e2e:all`
-covers both browsers. `npm run test:e2e` runs Chrome only, so the default suite is green
-without that install rather than silently falling back to Chromium.
+`AngularShell` and `ui` are IIS virtual directories, not IIS applications. Their aliases are created as `AngularShell` and `ui` without a leading slash; IIS exposes them as `/AngularShell` and `/ui`.
 
-```bash
-npm install
+### Components
+
+| Component | Role |
+|---|---|
+| `legacy-container` | Full-viewport Angular iframe host. It has no federation responsibility. |
+| Legacy web application | .NET Framework 4.8 Web Forms plus Classic ASP. It owns Forms Authentication and StateServer session state. |
+| Federation shell | Reads the feature marker on an ASPX page, validates the manifest entry, creates the shared Angular runtime, and loads one provider. |
+| Provider applications | Deployment units. A provider may package several independently addressable page features. |
+| Feature libraries | Implementation units: normally one Angular library per migrated page. |
+| Runtime manifest | Maps a logical feature key to its provider version, exposed module, and custom-element name. |
+| COM bridge | Lets Classic ASP recover the authenticated ASP.NET StateServer identity. |
+
+### End-to-end page flow
+
+1. The browser opens `/AngularShell/`.
+2. `legacy-container` loads `/default.asp`, or the validated URL from `?path=`, in a same-origin iframe.
+3. Legacy links, forms, popups, downloads, ASP pages, and ASPX pages continue to operate inside that iframe.
+4. A migrated ASPX page declares one feature key and its custom-element tag. It references only the stable federation shell under `/ui/shell/current`; it does not know a provider version.
+5. The federation shell reads `/ui/manifest.json`, validates compatibility, and loads only the selected provider and page entry.
+6. The provider registers the Angular page as a custom element using the shell-owned Angular runtime.
+7. The existing element in the ASPX document upgrades and renders. The outer `legacy-container` never downloads federation code.
+
+The current POC contains four feature libraries and three provider applications. `pricing-provider` proves that one provider can deploy both `pricing-search` and `pricing-details` while each page remains independently addressable and lazily loaded.
+
+### Authentication and session flow
+
+1. An unauthenticated protected request reaches `/Login.aspx`. If it was loaded in the iframe, the login page intentionally promotes itself to the top-level window.
+2. `/FakeIdp.aspx` simulates the external identity provider. `/Landing.aspx` creates the `.LEGACYAUTH` and `ASP.NET_SessionId` cookies at path `/`, stores the user and roles in StateServer, and redirects to the configured `LoginDestination`.
+3. Web Forms reads the authenticated principal and StateServer session directly. The principal module restores roles from the Forms Authentication ticket.
+4. Classic ASP passes the two cookies to the registered `LegacyComBridge.SessionBridge`, which calls the local `SessionInfo.ashx` endpoint and restores the same identity.
+
+`Web.config` currently sends successful login back to `/AngularShell/`. The fake identity provider is test infrastructure only; it is not a production identity solution.
+
+### Navigation and refresh
+
+After an iframe navigation, the container records the current root-relative legacy URL in the parent query string, for example `/AngularShell/?path=%2Flegacy-page.aspx`. It uses `history.replaceState`, so it does not create an extra parent history entry.
+
+On refresh, the container validates `path` and restores that page in the iframe. It preserves the legacy page's query string and fragment. Missing paths open `/default.asp`; duplicate, cross-origin, malformed, or recursive `/AngularShell` paths fall back safely to `/default.asp`. A refresh can restore a URL but cannot replay a previous POST body.
+
+Same-origin hosting is required for iframe URL synchronization and the current framing policy. Authentication and session cookies use path `/`, so both the legacy pages and `/AngularShell` receive them. IIS sends `X-Frame-Options: SAMEORIGIN` and a CSP containing `frame-ancestors 'self'`.
+
+### Deployment boundaries
+
+- `npm run release` builds and publishes the federation shell and providers. Provider versions are immutable; `publish/ui/manifest.json` controls per-feature promotion and rollback.
+- `npm run release:container` independently builds and publishes `legacy-container` under `publish/angular-shell/current`.
+- `Deploy-LegacyWeb.ps1` builds and replaces only the legacy web root, retaining `site.previous` for rollback.
+- `Deploy-AngularShell.ps1` only mirrors the already-published Angular directories. It does not create, remove, or convert IIS applications or virtual directories.
+
+## 2. Machine setup
+
+### Prerequisites
+
+- Node.js 22 and npm.
+- Chrome; Edge is required for the Edge test projects.
+- For the real harness: Windows 10/11 or Windows Server, Administrator access, IIS, .NET Framework 4.8, and Visual Studio Build Tools with Web Build Tools/MSBuild.
+- A clean Git working tree for normal publishing. Published versions are immutable, so use a new SemVer for each release.
+
+### Install dependencies
+
+From the repository root:
+
+```powershell
+npm ci
 ```
 
-## Run it
+### Build and publish the Angular artifacts
 
-```bash
-ARTIFACT_VERSION=1.0.0 npm run release
+Publish the container first:
+
+```powershell
+npm run release:container:local
 ```
 
-```bash
-node tools/promote-manifest.mjs pricing-search 1.0.0 && node tools/promote-manifest.mjs pricing-details 1.0.0 && node tools/promote-manifest.mjs feature-two 1.0.0 && node tools/promote-manifest.mjs feature-three 1.0.0
+For the federation shell and providers on PowerShell, choose a new version:
+
+```powershell
+$env:ARTIFACT_VERSION = '1.4.0'
+$env:BUILD_RUN_ID = "run-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+npx nx run-many -t publish -p shell pricing-provider feature-two-provider feature-three-provider
+
+npm run promote -- pricing-search $env:ARTIFACT_VERSION
+npm run promote -- pricing-details $env:ARTIFACT_VERSION
+npm run promote -- feature-two $env:ARTIFACT_VERSION
+npm run promote -- feature-three $env:ARTIFACT_VERSION
 ```
 
-```bash
+On macOS or Linux, the equivalent federation release is `ARTIFACT_VERSION=1.4.0 npm run release`, followed by the same four promotion commands with `1.4.0` as the version.
+
+### Run without IIS
+
+The Node host simulator serves the published Angular assets and lightweight legacy-page stand-ins:
+
+```powershell
 npm run start:host
 ```
 
-Then open http://localhost:44300/ — the landing page. It loads the shell like every other
-host page, but hosts no feature element, so the shell finds nothing to do and stops. A
-panel at the bottom lists every JavaScript file the page actually downloaded, grouped by
-which published artifact served it: three shell files, nothing else. Click any menu item
-and the panel updates to show that page's provider files appear, and only that page's —
-`pricing-search` never pulls in `pricing-details`, `feature-two`, or `feature-three`.
+Open `http://localhost:44300/AngularShell/`. This mode verifies the container, iframe navigation and refresh, federation loading, lazy providers, popups, downloads, and Back/Forward behavior. It does not replace the real IIS/.NET verification.
 
-The same claim is enforced in `apps/host-e2e/src/deferred-loading.spec.ts`, checked against
-the network rather than the panel's own report of itself.
+### Create the Windows IIS harness once
 
-## What happens when a page loads
+The checked-in COM bridge calls `SessionInfo.ashx` on port `8800`, so use port `8800` for the complete unmodified harness. If another port is required, update the endpoint in `SessionBridge.cs`, rebuild the solution, and register the rebuilt COM assembly.
 
-1. The host returns static HTML naming a feature key (`data-angular-feature`) and a custom
-   element tag. It names **no version and no provider URL**.
-2. One stable script reference loads the shell from `/ui/shell/current/main.js`.
-3. The shell fetches `/ui/manifest.json`, validates the entry, and rejects an incompatible
-   contract version before contacting the provider.
-4. It initialises Native Federation for that one provider and creates a single Angular
-   environment — no root component.
-5. It loads the module named by the manifest's `exposedModule` (e.g. `./pricing-search`) and
-   calls it with its own injector.
-6. The provider looks the element name up in its page registry, **dynamically imports only
-   that page**, creates a child `EnvironmentInjector`, and defines the custom element.
-7. The browser upgrades the tag already in the document.
+Run elevated Windows PowerShell from the repository root:
 
-## Layout
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
 
-```
-apps/
-  shell/                     dynamic host: manifest handling, compatibility gate,
-                             telemetry, fallback UI
-  providers/                 deployment units — federation config, page registry,
-    pricing-provider/          register adapter, pages.json. No feature code.
-    feature-two-provider/
-    feature-three-provider/
-  host-e2e/                  architecture tests against published artifacts
-libs/
-  features/                  one library per page
-    pricing-search/            \ both deployed by pricing-provider
-    pricing-details/           /
-    feature-two/
-    feature-three/
-  data-access/pricing/       shared by both pricing pages
-  shared/core/               the contract, the tokens, and createFederatedFeature
-tools/
-  federation-sharing.mjs     the single definition of what is shared
-  publish-artifact.mjs       immutable publish + metadata + checksums
-  promote-manifest.mjs       validated, atomic promotion
-  verify-bundle.mjs          federation build gate
-  host-simulator/            static host serving /ui and one page per feature
-publish/ui/                  deployed asset tree; artifacts are build output
-                             (git-ignored), manifest.json is tracked
+.\legacy-harness\deploy\New-LegacyHarnessSite.ps1 -Port 8800
+
+.\legacy-harness\deploy\Deploy-LegacyWeb.ps1 `
+  -HarnessRoot .\legacy-harness
+
+.\legacy-harness\deploy\Register-ComBridge.ps1 `
+  -HarnessRoot .\legacy-harness
+
+.\legacy-harness\deploy\Deploy-AngularShell.ps1 `
+  -AngularSource .\publish\angular-shell\current `
+  -UiSource .\publish\ui
 ```
 
-## The mechanisms that matter
+The setup creates the `LegacyHarness` site and app pool, enables the required IIS features, starts ASP.NET State Service, and creates the `/AngularShell` and `/ui` virtual directories. It refuses to modify or remove an existing IIS application with either name.
 
-### Per-page exposed keys are the late-binding seam
+Open `http://localhost:8800/AngularShell/`, continue through the fake identity provider, navigate to `/legacy-page.aspx`, and confirm the Angular pricing feature renders inside the legacy page. Navigate again and refresh to confirm the `?path=` URL restores the same iframe page.
 
-Each page a provider hosts gets its own federation `exposes` entry, pointing at a thin
-registration file:
+### Rebuild and redeploy after changes
 
-```js
-// apps/providers/pricing-provider/federation.config.mjs
-exposes: {
-  './pricing-search':  './apps/providers/pricing-provider/src/pricing-search.register.ts',
-  './pricing-details': './apps/providers/pricing-provider/src/pricing-details.register.ts',
-},
+For an Angular-container-only change, do not rerun IIS setup, legacy deployment, or COM registration:
+
+```powershell
+npm run release:container:local
+
+.\legacy-harness\deploy\Deploy-AngularShell.ps1 `
+  -AngularSource .\publish\angular-shell\current `
+  -UiSource .\publish\ui
 ```
 
-```ts
-// pricing-search.register.ts
-export default createFederatedFeature({
-  'ca-pricing-search': async () => (await import('@company/features/pricing-search')).PRICING_SEARCH_PAGE,
-});
+For a legacy .NET/ASP change, rerun `Deploy-LegacyWeb.ps1`. Rerun `Register-ComBridge.ps1` only when the COM bridge changes. Rerun `New-LegacyHarnessSite.ps1` only for initial IIS setup or an intentional site/binding change.
+
+### Verification
+
+Run the repository checks:
+
+```powershell
+npm test
+npm run lint:all
+node tools/verify-bundle.mjs
+npx nx run host-e2e:e2e
+npx nx run host-e2e:e2e-container
 ```
 
-The `exposes` **key** — not the source file's name — drives the published filename, so the
-artifact carries self-descriptive files rather than a generic one: measured on the built
-1.1.0 artifact, `pricing-search-YHCQTVME.js` and `pricing-details-JBXPLBMM.js` are ~300-byte
-wrappers; the actual page code sits in its own lazy chunk (4.5 KB for search, 4.1 KB for
-details), and the shared data-access code (1.4 KB) is fetched once, from a chunk both pages'
-wrappers reference — esbuild builds every `exposes` entry for a provider in one invocation,
-so a dynamic import shared across two exposed entries is still deduplicated, not inlined
-twice. Loading one page never fetches the other's chunk.
+Run the complete real-IIS suite against the configured site:
 
-A feature library knows nothing about which provider ships it or which key exposes it, so
-regrouping which pages live in which provider doesn't touch the library — which is why page
-libraries are forbidden from importing each other (below): a page with no sibling coupling
-can be regrouped freely. Moving a page to a different provider is a contained, mechanical
-change, but no longer a one-liner: a new `exposes` entry (and provider, if a new one) at the
-destination, the `*.register.ts` file moved there, the `pages.json` entry moved from the old
-provider's descriptor to the new one, and the manifest's `remoteEntry`/`artifact`/
-`exposedModule` repointed.
-
-### The manifest is the deployment control plane
-
-Nothing else names a feature version — not the shell build, not the host page. Releasing
-and rolling back are the same operation:
-
-```bash
-node tools/promote-manifest.mjs pricing-search 1.1.0
+```powershell
+$env:EXTERNAL_BASE_URL = 'http://localhost:8800'
+npx playwright test --config apps/host-e2e/playwright.container.config.mts --project=chrome
 ```
 
-Promotion is refused unless the artifact exists at its immutable path, its checksums still
-match, it actually serves that feature key and element name, its contract major matches the
-shell's, and its Angular version matches the deployed shell's. The write is a temp-file
-rename, so no request ever reads a partial manifest.
-
-Because `artifact` decouples the feature key from the published directory, two feature keys
-can point at **different versions of the same provider artifact** — demonstrated below.
-
-### One Angular runtime, enforced
-
-Sharing is one list in `tools/federation-sharing.mjs`, consumed by the shell config, all
-three provider configs and the verify gate — five consumers, one definition, so a one-sided
-allowlist is impossible.
-
-Two failure directions, both invisible at build time:
-
-- **A workspace library silently shared.** Native Federation shares *every*
-  `tsconfig.base.json` path entry unless `sharedMappings` is set. Without the allowlist all
-  four workspace libraries become strict-version singletons pinned to `0.0.0`.
-- **`shared-core` *not* shared.** Its `InjectionToken`s are compared by identity, so a
-  second copy makes every `inject(RUNTIME_CONFIG)` in a provider throw `NullInjectorError`
-  at first render — from a completely clean build.
-
-`node tools/verify-bundle.mjs` fails on both, plus any bare specifier the import map cannot
-resolve, across all four artifacts.
-
-## Verified
-
-Run `npm test` (46 unit tests: 36 in `tools/*.test.mjs` + 10 in `shared-core`), `npm run
-lint:all`, and `npm run test:e2e` (27 specs).
-
-- **Nothing loads until a feature is requested.** The landing page downloads the shell and
-  nothing else — no manifest fetch even, since the shell returns as soon as it finds no
-  `data-angular-feature` element. Navigating to a feature page downloads that provider's
-  files and no other provider's; navigating between the two pricing pages swaps one page
-  chunk for the other without ever fetching both.
-- **One runtime, cold cache.** Every framework file is fetched from `/ui/shell/current/`,
-  never a provider path, on all four pages — asserted per file, since Angular legitimately
-  ships several secondary entry points.
-- **Lazy per-page loading, by response body.** Federation chunks are content-hashed
-  anonymous names, so filenames prove nothing; each page's unique tracer string must be
-  absent from every chunk the sibling page downloads.
-- **Failure paths** produce the fallback with a trace ID, never a blank page: unknown
-  feature key, disabled feature, incompatible contract (asserted to make *no* provider
-  request), unreachable provider, unsupported schema, and a foreign custom-element
-  collision.
-- **Registration lifecycle** (10 tests): concurrent calls share one promise, a rejection is
-  evicted so retry works, a foreign tag is a collision, the injector is destroyed only on
-  the pre-commit path, and a logger that throws *after* `define()` cannot undo a committed
-  registration. Each was confirmed to fail when its rule is removed.
-- **Dependency boundaries** fire — verified by temporarily importing a page from another
-  page, and a page from the shell.
-- **Independent provider deployment**: publishing and promoting one provider leaves the
-  others on their previous artifacts.
-- **Independent per-page promotion**: `pricing-search` and `pricing-details` were promoted to
-  different versions of the `pricing` artifact — each page fetched only from its own version
-  path and rendered correctly, and rolling one back left the other untouched. Works because
-  the manifest tracks `featureVersion` per feature key, not per artifact.
-- **Per-page addressability at the network level**: the two pricing pages fetch different,
-  self-descriptively-named exposed entry files (`pricing-search-*.js` / `pricing-details-*.js`)
-  rather than funneling through one generic entry — and still share the same data-access
-  chunk, fetched once, proven by URL equality rather than tracer-string inference.
-
-## Guarantees and their limits
-
-**Rollout and rollback are independent per page; builds are not.** The two pricing pages
-share one artifact, so changing the search page rebuilds the artifact containing the details
-page — the details page simply is not promoted. Splitting a page into its own provider later
-is a contained, mechanical move — not a one-liner — covered above under "Per-page exposed
-keys are the late-binding seam."
-
-**The shell loads exactly one feature provider per document.** Two feature keys may point at
-different versions of the same remote across separate documents; they cannot coexist in one.
-
-**Provider artifacts do contain Native Federation fallback bundles of Angular.** That is by
-design and cannot be suppressed — there is no `import: false` equivalent, and using `skip`
-is worse because the package stops being shared and gets inlined. The enforceable guarantee
-is the runtime one: negotiation resolves every framework and shared-core package to the
-shell-owned copy, asserted by cold-browser tests.
-
-**Publishing requires a build in the same execution.** `BUILD_RUN_ID` is required rather
-than defaulted, because a per-process fallback would match only itself. Verified to fail
-closed on a missing marker, a marker from another run, and no id at all. This matters: while
-verifying the bundle gate, a broken config made a build fail, the old `dist/` survived, and
-the gate passed against the stale artifact.
-
-## Two integration details that are easy to get wrong
-
-**The host page must load the shell as `type="module-shim"`.** Native Federation installs
-the shared-dependency import map through es-module-shims; a plain `type="module"` bypasses
-the shim and every bare Angular specifier fails to resolve. The host pages emit the
-`esms-options` block, the polyfill, and the shim-typed reference.
-
-**The shell resolves its own federation metadata from `import.meta.url`,** not the document.
-It lives at `/ui/shell/current/` but is hosted by pages at arbitrary paths, so resolving
-against the document looks for `remoteEntry.json` next to the host page and fails.
-
-Related: `apps/shell/src/main.ts` must not import `shared-core` as a *value* — it runs before
-the import map exists. It re-declares the contract major locally, and
-`tools/contract-consistency.test.mjs` enforces that the duplicate stays in sync.
-
-## Deviations and scope
-
-**Native Federation instead of webpack Module Federation.** esbuild-based, matching where the
-Angular CLI has moved. Metadata is `remoteEntry.json`; sharing is configured in
-`federation.config.mjs`; the host page needs the es-module-shims setup above.
-
-**Replacing `shareAll()` with an explicit allowlist has a cost worth knowing.** A shared
-bundle's own static imports must resolve through the import map, and pruning is by usage in
-*application* code — the wrong question. `@angular/platform-browser` imports
-`@angular/common/http`, and `@angular/core` imports `rxjs/operators`, in paths this app never
-executes. Both surfaced only at runtime, which is why `verify-bundle.mjs` now checks every
-bare specifier against the import map.
-
-**Frontend only.** No BFF, COM Bridge, XML, .NET, IIS, authentication or ASPX. Feature data
-is in-memory. A previous iteration with a mock BFF (XML→JSON mapping, 7 tests) and an ASPX
-host simulation is preserved at tag `poc-with-bff-and-aspx-host`. A forward-looking design for
-a *future* phase — serving the published `/ui` tree alongside an existing ASP.NET Web Forms
-application from an IIS virtual directory, with no changes to the .NET solution — is sketched
-in [`IIS-SPA-INTEGRATION-PLAN.md`](IIS-SPA-INTEGRATION-PLAN.md); nothing in this branch
-implements it yet.
-
-**Not covered:** accessibility and performance budget gates, manifest signing, and
-authorization. CI/CD *is* covered — see `.github/workflows/ci.yml`: lint/test/build, the
-federation-sharing gate, publish + promote all four features, then the full E2E suite against
-the published artifacts on Chrome and Edge.
-
-## Troubleshooting
-
-**`fatal error: all goroutines are asleep - deadlock` from esbuild.** Not reproduced in this
-project's own development or CI — `esbuild`'s JS wrapper and native `@esbuild/<platform>`
-binary versions match (`0.28.1`/`0.28.1` at time of writing; check with
-`node -e "console.log(require('esbuild/package.json').version)"` against the version in
-`node_modules/@esbuild/<platform>/package.json`), and architecture matches (`file
-node_modules/@esbuild/*/bin/esbuild`). This failure mode is a known class of issue in esbuild's
-Go runtime under some sandboxed or resource-constrained execution environments, independent of
-this repository's source or config. If it occurs: confirm the two esbuild versions above
-actually match (a mismatch there is the most common concrete cause and is fixable with a clean
-`rm -rf node_modules && npm ci`); if they already match, it is very likely specific to the
-execution environment rather than something a source change here can address.
+The real-IIS suite seeds an authenticated session and verifies framing headers, Forms Authentication, StateServer identity through COM, Classic ASP/ASPX navigation, Web Forms ViewState and postbacks, downloads, iframe login escape, federated Angular rendering, URL synchronization, refresh restoration, and Back/Forward behavior. Use the `edge` project for the target Windows browser pass.

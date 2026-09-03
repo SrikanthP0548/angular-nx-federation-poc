@@ -63,6 +63,8 @@
     <Content Include="Landing.aspx" />
     <Content Include="legacy-page.asp" />
     <Content Include="legacy-page.aspx" />
+    <Content Include="migrated-asp-1.aspx" />
+    <Content Include="migrated-asp-2.aspx" />
     <Content Include="Login.aspx" />
     <Content Include="Logout.aspx" />
     <Content Include="SessionInfo.ashx" />

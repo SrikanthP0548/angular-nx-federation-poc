@@ -13,6 +13,8 @@ Sub RenderLegacyHeader(pageTitle)
     <a href="/default.asp">/default.asp</a>
     <a href="/legacy-page.asp">/legacy-page.asp</a>
     <a href="/legacy-page.aspx">/legacy-page.aspx</a>
+    <a href="/migrated-asp-1.aspx">/migrated-asp-1.aspx</a>
+    <a href="/migrated-asp-2.aspx">/migrated-asp-2.aspx</a>
     <a href="/Logout.aspx">Logout</a>
   </header>
 <%
