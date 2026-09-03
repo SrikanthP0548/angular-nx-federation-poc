@@ -1,4 +1,4 @@
-import { PageDefinition } from '@company/shared-core';
+import { PageDefinition } from '@company/platform-core';
 import { providePricingData } from '@company/data-access/pricing';
 import { PricingDetailsPage } from './lib/pricing-details-page';
 

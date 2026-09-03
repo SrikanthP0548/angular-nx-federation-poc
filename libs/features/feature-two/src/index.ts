@@ -1,4 +1,4 @@
-import { PageDefinition } from '@company/shared-core';
+import { PageDefinition } from '@company/platform-core';
 import { FeatureTwoPage } from './lib/feature-two-page';
 
 /** The library's entire public API: one page definition. */

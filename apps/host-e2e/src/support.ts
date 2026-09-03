@@ -1,6 +1,5 @@
 import type { Page, Response } from '@playwright/test';
 
-/** Tracer strings, each unique to one feature library's template. */
 export const TRACERS = {
   'pricing-search': 'Customer pricing search',
   'pricing-details': 'Product pricing detail',
@@ -8,16 +7,8 @@ export const TRACERS = {
   'feature-three': 'Counterparty limits',
 } as const;
 
-export const SHELL_PATH = '/ui/shell/current/';
+export const ASSET_PATH = '/ui/current/';
 
-/**
- * Records the body of every JavaScript response, so assertions can be made on
- * what was actually delivered.
- *
- * Filenames prove nothing here: federation chunks are content-hashed
- * anonymous names regardless of `outputHashing`, so "did this page download
- * the other page's code" can only be answered by looking inside the bodies.
- */
 export class ScriptRecorder {
   readonly urls: string[] = [];
   private readonly bodies: Array<Promise<{ url: string; text: string }>> = [];
@@ -36,29 +27,20 @@ export class ScriptRecorder {
     });
   }
 
-  async settled() {
+  settled() {
     return Promise.all(this.bodies);
   }
 
-  /** URLs matching a substring, e.g. '/ui/pricing/'. */
-  matching(fragment: string) {
-    return this.urls.filter((u) => u.includes(fragment));
-  }
-
   async containing(needle: string) {
-    return (await this.settled()).filter((r) => r.text.includes(needle)).map((r) => r.url);
+    return (await this.settled()).filter((response) => response.text.includes(needle)).map((response) => response.url);
   }
 }
 
-/**
- * Serves a modified manifest for one navigation, so failure paths can be
- * exercised without mutating published state.
- */
-export async function withManifest(page: Page, mutate: (manifest: any) => void) {
-  await page.route('**/ui/manifest.json', async (route) => {
+export async function replaceHostMarkup(page: Page, replacements: Record<string, string>) {
+  await page.route('**/pricing-search.html*', async (route) => {
     const response = await route.fetch();
-    const manifest = await response.json();
-    mutate(manifest);
-    await route.fulfill({ json: manifest });
+    let body = await response.text();
+    for (const [from, to] of Object.entries(replacements)) body = body.replace(from, to);
+    await route.fulfill({ response, body });
   });
 }

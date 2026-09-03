@@ -1,9 +1,0 @@
-{
-  "schemaVersion": "1.1",
-  "artifact": "pricing",
-  "remoteName": "pricing",
-  "pages": [
-    { "featureKey": "pricing-search", "elementName": "ca-pricing-search", "exposedModule": "./pricing-search" },
-    { "featureKey": "pricing-details", "elementName": "ca-pricing-details", "exposedModule": "./pricing-details" }
-  ]
-}

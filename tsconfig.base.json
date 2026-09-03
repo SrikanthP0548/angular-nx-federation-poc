@@ -5,32 +5,22 @@
     "sourceMap": true,
     "declaration": false,
     "moduleResolution": "bundler",
-    "emitDecoratorMetadata": true,
+    "emitDecoratorMetadata": false,
     "experimentalDecorators": true,
     "importHelpers": true,
-    "target": "es2015",
-    "module": "esnext",
-    "lib": ["es2020", "dom"],
+    "target": "es2022",
+    "module": "preserve",
+    "lib": ["es2022", "dom"],
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
-    "strict": false,
+    "strict": true,
     "paths": {
-      "@company/shared-core": ["./libs/shared/core/src/index.ts"],
-      "@company/features/pricing-search": [
-        "./libs/features/pricing-search/src/index.ts"
-      ],
-      "@company/features/pricing-details": [
-        "./libs/features/pricing-details/src/index.ts"
-      ],
-      "@company/features/feature-two": [
-        "./libs/features/feature-two/src/index.ts"
-      ],
-      "@company/features/feature-three": [
-        "./libs/features/feature-three/src/index.ts"
-      ],
-      "@company/data-access/pricing": [
-        "./libs/data-access/pricing/src/index.ts"
-      ]
+      "@company/platform-core": ["./libs/platform-core/src/index.ts"],
+      "@company/features/pricing-search": ["./libs/features/pricing-search/src/index.ts"],
+      "@company/features/pricing-details": ["./libs/features/pricing-details/src/index.ts"],
+      "@company/features/feature-two": ["./libs/features/feature-two/src/index.ts"],
+      "@company/features/feature-three": ["./libs/features/feature-three/src/index.ts"],
+      "@company/data-access/pricing": ["./libs/data-access/pricing/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

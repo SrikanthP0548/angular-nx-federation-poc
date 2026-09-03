@@ -1,8 +1,8 @@
 import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
-import { PLATFORM_LOGGER, RUNTIME_CONFIG } from '@company/shared-core';
+import { PLATFORM_LOGGER, RUNTIME_CONFIG } from '@company/platform-core';
 
 /**
- * A third migrated page in a third provider.
+ * A third migrated page loaded from the shared feature registry.
  *
  * Tracer string: "Counterparty limits".
  */
@@ -13,7 +13,7 @@ import { PLATFORM_LOGGER, RUNTIME_CONFIG } from '@company/shared-core';
     <section class="page">
       <h1>Counterparty limits</h1>
       <p>Desk: {{ desk() || 'unassigned' }}</p>
-      <p class="env">Resolved from the shell injector — environment: {{ environment }}</p>
+      <p class="env">Resolved from the loader injector — environment: {{ environment }}</p>
     </section>
   `,
   styles: `

@@ -19,24 +19,21 @@ test.describe('host pages', () => {
     await expect(page.getByText('EQ-OPT — Equity Options Clearing')).toBeVisible();
   });
 
-  test('feature two renders from its own provider', async ({ page }) => {
+  test('feature two renders from its lazy page library', async ({ page }) => {
     await page.goto('/feature-two.html?reference=SSI-9902');
 
     await expect(page.getByRole('heading', { name: TRACERS['feature-two'] })).toBeVisible();
     await expect(page.getByText('Reference: SSI-9902')).toBeVisible();
   });
 
-  test('feature three renders from its own provider', async ({ page }) => {
+  test('feature three renders from its lazy page library', async ({ page }) => {
     await page.goto('/feature-three.html?desk=Credit');
 
     await expect(page.getByRole('heading', { name: TRACERS['feature-three'] })).toBeVisible();
     await expect(page.getByText('Desk: Credit')).toBeVisible();
   });
 
-  test('a separately deployed provider still resolves platform tokens from the shell', async ({ page }) => {
-    // RUNTIME_CONFIG is provided by the shell. A provider rendering its value
-    // proves the InjectionToken identity survived the artifact boundary —
-    // which only holds while shared-core is a true singleton.
+  test('a lazy page resolves platform tokens from the loader injector', async ({ page }) => {
     await page.goto('/feature-two.html');
 
     await expect(page.getByText(/environment: local-integration/)).toBeVisible();

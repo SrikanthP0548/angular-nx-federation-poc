@@ -1,13 +1,9 @@
 import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
-import { PLATFORM_LOGGER, RUNTIME_CONFIG } from '@company/shared-core';
+import { PLATFORM_LOGGER, RUNTIME_CONFIG } from '@company/platform-core';
 
 /**
- * A second migrated page, deployed in its own provider so that independent
- * provider releases can be demonstrated against it.
- *
- * It injects RUNTIME_CONFIG to prove a feature in a separately deployed
- * artifact still resolves platform tokens from the shell's injector — which
- * only holds if shared-core is a true singleton.
+ * A second migrated page. It injects RUNTIME_CONFIG to prove that every lazy
+ * page receives platform services from the loader-owned parent injector.
  *
  * Tracer string: "Settlement instructions".
  */
@@ -18,7 +14,7 @@ import { PLATFORM_LOGGER, RUNTIME_CONFIG } from '@company/shared-core';
     <section class="page">
       <h1>Settlement instructions</h1>
       <p>Reference: {{ reference() || 'none supplied' }}</p>
-      <p class="env">Resolved from the shell injector — environment: {{ environment }}</p>
+      <p class="env">Resolved from the loader injector — environment: {{ environment }}</p>
     </section>
   `,
   styles: `

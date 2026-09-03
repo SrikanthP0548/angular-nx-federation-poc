@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
 import { CurrencyPipe, DatePipe } from '@angular/common';
-import { PLATFORM_LOGGER } from '@company/shared-core';
+import { PLATFORM_LOGGER } from '@company/platform-core';
 import { CustomerPricing, PricingDataService } from '@company/data-access/pricing';
 
 /**

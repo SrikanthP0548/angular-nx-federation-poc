@@ -1,0 +1,56 @@
+{
+  "name": "elements-loader",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "prefix": "app",
+  "sourceRoot": "apps/elements-loader/src",
+  "tags": ["type:loader"],
+  "targets": {
+    "build": {
+      "executor": "@angular/build:application",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/elements-loader",
+        "browser": "apps/elements-loader/src/main.ts",
+        "index": "apps/elements-loader/src/index.html",
+        "tsConfig": "apps/elements-loader/tsconfig.app.json",
+        "namedChunks": true,
+        "inlineStyleLanguage": "scss",
+        "assets": [{ "glob": "**/*", "input": "apps/elements-loader/public" }],
+        "styles": ["apps/elements-loader/src/styles.scss"]
+      },
+      "configurations": {
+        "production": {
+          "budgets": [
+            { "type": "initial", "maximumWarning": "150kb", "maximumError": "250kb" },
+            { "type": "anyComponentStyle", "maximumWarning": "4kb", "maximumError": "8kb" }
+          ],
+          "outputHashing": "none"
+        },
+        "development": {
+          "optimization": false,
+          "extractLicenses": false,
+          "sourceMap": true
+        }
+      }
+    },
+    "serve": {
+      "continuous": true,
+      "executor": "@angular/build:dev-server",
+      "defaultConfiguration": "development",
+      "options": { "port": 4200 },
+      "configurations": {
+        "production": { "buildTarget": "elements-loader:build:production" },
+        "development": { "buildTarget": "elements-loader:build:development" }
+      }
+    },
+    "lint": { "executor": "@nx/eslint:lint" },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx vitest run --config apps/elements-loader/vite.config.mts"
+      }
+    }
+  }
+}

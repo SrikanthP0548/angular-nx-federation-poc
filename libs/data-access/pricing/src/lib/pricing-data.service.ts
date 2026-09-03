@@ -8,7 +8,7 @@ import { findCustomerPricing } from './pricing-fixtures';
  *
  * Deliberately not `providedIn: 'root'` — it is provided by the page injector
  * created during registration, so its lifetime matches the page's rather than
- * the shell's.
+ * the loader application's.
  */
 @Injectable()
 export class PricingDataService {

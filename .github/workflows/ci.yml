@@ -2,8 +2,7 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
 
 permissions:
@@ -22,39 +21,14 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: 'npm'
+          cache: npm
 
       - run: npm ci
-
-      # Chrome and Edge, matching the browsers the target environment runs.
-      # Playwright's bundled Chromium is deliberately not substituted.
       - run: npx playwright install --with-deps chrome msedge
-
-      - run: npx nx run-many -t lint test build
-
-      # The federation gates. Neither failure mode is visible at build time:
-      # a workspace library silently shared as a singleton, or shared-core not
-      # shared at all — which makes every inject() of its tokens throw
-      # NullInjectorError at first render, from a clean build.
-      - run: node tools/verify-bundle.mjs
-
-      # dist/ is never cached or restored between jobs, so a build artifact
-      # cannot outlive the execution that produced it. Publishing is an Nx
-      # target depending on build, and refuses output whose BUILD_RUN_ID stamp
-      # is missing or from another run.
-      - name: Publish and promote
-        env:
-          ARTIFACT_VERSION: 0.0.0-ci
-        run: |
-          npm run release
-          for feature in pricing-search pricing-details feature-two feature-three; do
-            node tools/promote-manifest.mjs "$feature" "$ARTIFACT_VERSION"
-          done
-
-      # Architecture tests run against the published artifacts on the host
-      # simulator, not a dev server: the dev build is chunked and served
-      # differently, so it would prove something other than what ships.
-      - run: npx nx run host-e2e:e2e-all
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm run test:e2e:all
 
       - uses: actions/upload-artifact@v4
         if: failure()
