@@ -2,27 +2,253 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Shell dev host</title>
+    <title>Pricing · Federation Shell</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        color: #182230;
+        background: #f3f5f8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-width: 20rem;
+        min-height: 100vh;
+        margin: 0;
+        background: #f3f5f8;
+      }
+
+      .dev-shell-header {
+        display: flex;
+        min-height: 4.5rem;
+        align-items: center;
+        gap: 2rem;
+        padding: 0 2rem;
+        color: #f8fafc;
+        background: #152238;
+        box-shadow: 0 0.35rem 1.25rem rgba(15, 23, 42, 0.16);
+      }
+
+      .dev-shell-brand {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .dev-shell-mark {
+        width: 1.75rem;
+        height: 1.75rem;
+        border: 0.3rem solid #6ee7b7;
+        border-radius: 0.35rem;
+        box-shadow: inset 0 0 0 0.2rem #152238;
+        background: #38bdf8;
+      }
+
+      .dev-shell-brand-copy {
+        display: grid;
+        gap: 0.1rem;
+      }
+
+      .dev-shell-brand strong {
+        font-size: 0.95rem;
+        letter-spacing: -0.01em;
+      }
+
+      .dev-shell-brand span {
+        color: #b8c4d6;
+        font-size: 0.7rem;
+      }
+
+      .dev-shell-nav {
+        display: flex;
+        align-self: stretch;
+        align-items: stretch;
+        gap: 0.25rem;
+      }
+
+      .dev-shell-nav a {
+        position: relative;
+        display: flex;
+        align-items: center;
+        padding: 0 1rem;
+        color: #cbd5e1;
+        font-size: 0.95rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition:
+          color 140ms ease-out,
+          background-color 140ms ease-out;
+      }
+
+      .dev-shell-nav a:hover {
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .dev-shell-nav a[aria-current='page'] {
+        color: #ffffff;
+        background: rgba(56, 189, 248, 0.1);
+      }
+
+      .dev-shell-nav a[aria-current='page']::after {
+        position: absolute;
+        right: 1rem;
+        bottom: 0;
+        left: 1rem;
+        height: 0.2rem;
+        border-radius: 0.2rem 0.2rem 0 0;
+        background: #6ee7b7;
+        content: '';
+      }
+
+      .dev-shell-nav a:focus-visible {
+        z-index: 1;
+        border-radius: 0.4rem;
+        outline: 0.2rem solid #7dd3fc;
+        outline-offset: -0.35rem;
+      }
+
+      .dev-shell-content {
+        width: min(100%, 76rem);
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      #angular-page-host {
+        display: block;
+        min-height: 24rem;
+        overflow: hidden;
+        border: 1px solid #d7dee8;
+        border-radius: 0.9rem;
+        background: #ffffff;
+        box-shadow: 0 0.6rem 1.8rem rgba(15, 23, 42, 0.08);
+      }
+
+      @media (max-width: 46rem) {
+        .dev-shell-header {
+          align-items: stretch;
+          flex-direction: column;
+          gap: 0.75rem;
+          padding: 1rem 1rem 0;
+        }
+
+        .dev-shell-nav {
+          min-height: 3rem;
+          overflow-x: auto;
+        }
+
+        .dev-shell-nav a {
+          flex: 0 0 auto;
+          padding: 0 0.75rem;
+        }
+
+        .dev-shell-nav a[aria-current='page']::after {
+          right: 0.75rem;
+          left: 0.75rem;
+        }
+
+        .dev-shell-content {
+          padding: 1rem;
+        }
+      }
+    </style>
   </head>
   <body>
     <!--
-      Development stand-in for a host page. The real host pages, one per
-      feature entry, are served by tools/host-simulator against published
-      artifacts — which is the topology the E2E specs run against.
+      Development-only navigation host. Production ASPX pages do not consume
+      this document; they load /ui/shell/current/main.js and select exactly one
+      feature with their own data-angular-feature marker.
     -->
-    <main
-      id="angular-page-host"
-      data-angular-feature="pricing-search"
-      data-manifest-url="/manifest.dev.json"
-    >
-      <ca-pricing-search customer-id="1001"></ca-pricing-search>
+    <header class="dev-shell-header">
+      <div class="dev-shell-brand">
+        <span class="dev-shell-mark" aria-hidden="true"></span>
+        <span class="dev-shell-brand-copy">
+          <strong>Federation Shell</strong>
+          <span>Standalone development</span>
+        </span>
+      </div>
+
+      <nav class="dev-shell-nav" aria-label="Feature pages">
+        <a href="?feature=pricing-search" data-feature-link="pricing-search"
+          >Pricing</a
+        >
+        <a href="?feature=feature-two" data-feature-link="feature-two"
+          >Feature Two</a
+        >
+        <a href="?feature=feature-three" data-feature-link="feature-three"
+          >Feature Three</a
+        >
+      </nav>
+    </header>
+
+    <main class="dev-shell-content">
+      <section
+        id="angular-page-host"
+        data-manifest-url="/manifest.dev.json"
+        aria-live="polite"
+      ></section>
     </main>
 
     <script type="application/json" id="angular-bootstrap-context">
       { "assetBasePath": "/ui" }
+    </script>
+
+    <script>
+      (() => {
+        const pages = {
+          'pricing-search': {
+            title: 'Pricing',
+            elementName: 'ca-pricing-search',
+            attributes: { 'customer-id': '1001' },
+          },
+          'feature-two': {
+            title: 'Feature Two',
+            elementName: 'ca-feature-two',
+            attributes: { reference: 'SSI-4471' },
+          },
+          'feature-three': {
+            title: 'Feature Three',
+            elementName: 'ca-feature-three',
+            attributes: { desk: 'Rates' },
+          },
+        };
+
+        const requestedFeature = new URLSearchParams(location.search).get(
+          'feature',
+        );
+        const featureKey = Object.hasOwn(pages, requestedFeature)
+          ? requestedFeature
+          : 'pricing-search';
+        const page = pages[featureKey];
+        const host = document.getElementById('angular-page-host');
+        const element = document.createElement(page.elementName);
+
+        host.dataset.angularFeature = featureKey;
+        for (const [name, value] of Object.entries(page.attributes)) {
+          element.setAttribute(name, value);
+        }
+        host.appendChild(element);
+
+        document.title = `${page.title} · Federation Shell`;
+        document
+          .querySelector(`[data-feature-link="${featureKey}"]`)
+          .setAttribute('aria-current', 'page');
+      })();
     </script>
   </body>
 </html>

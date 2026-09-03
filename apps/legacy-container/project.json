@@ -89,7 +89,7 @@
       "dependsOn": ["stamp"],
       "cache": false,
       "options": {
-        "command": "node tools/publish-container.mjs \"$ARTIFACT_VERSION\""
+        "command": "node tools/publish-container.mjs"
       }
     }
   }

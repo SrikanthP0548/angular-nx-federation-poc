@@ -3,7 +3,13 @@ import { expect, test } from '@playwright/test';
 test('IIS applies one framing policy consistently across legacy and Angular resources', async ({
   request,
 }) => {
-  for (const path of ['/default.asp', '/legacy-page.aspx', '/AngularShell/']) {
+  for (const path of [
+    '/default.asp',
+    '/legacy-page.aspx',
+    '/migrated-asp-1.aspx',
+    '/migrated-asp-2.aspx',
+    '/AngularShell/',
+  ]) {
     const response = await request.get(path);
     expect(response.ok(), `${path} should return success`).toBe(true);
 
@@ -26,6 +32,35 @@ test('IIS applies one framing policy consistently across legacy and Angular reso
     ).toHaveLength(1);
     expect(contentSecurityPolicy[0].value).toContain("frame-ancestors 'self'");
   }
+});
+
+test('AngularShell navigates to each migrated ASPX page and renders its selected Angular element', async ({
+  page,
+}) => {
+  await page.goto('/AngularShell/');
+  const legacyFrame = page.frameLocator('iframe');
+
+  await legacyFrame
+    .getByRole('link', { name: '/migrated-asp-1.aspx' })
+    .click();
+  await expect(legacyFrame.locator('ca-pricing-search')).toContainText(
+    'Customer pricing search',
+  );
+  await expect(legacyFrame.locator('ca-feature-two')).toHaveCount(0);
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('path'))
+    .toBe('/migrated-asp-1.aspx');
+
+  await legacyFrame
+    .getByRole('link', { name: '/migrated-asp-2.aspx' })
+    .click();
+  await expect(legacyFrame.locator('ca-feature-two')).toContainText(
+    'Settlement instructions',
+  );
+  await expect(legacyFrame.locator('ca-pricing-search')).toHaveCount(0);
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('path'))
+    .toBe('/migrated-asp-2.aspx');
 });
 
 test('Classic ASP restores the same StateServer identity through the COM bridge', async ({

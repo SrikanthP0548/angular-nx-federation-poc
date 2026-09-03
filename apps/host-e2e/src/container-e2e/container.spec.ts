@@ -10,7 +10,9 @@ import { expect, Page, test } from '@playwright/test';
 /** The iframe's own live document — not the static <iframe src> attribute,
  *  which never changes on internal navigation (see the download test). */
 function childFrame(page: Page) {
-  return page.frames().find((frame) => frame.parentFrame() === page.mainFrame());
+  return page
+    .frames()
+    .find((frame) => frame.parentFrame() === page.mainFrame());
 }
 
 /** Exact pathname, not `page.url()).toContain(...)` — a substring match
@@ -21,6 +23,10 @@ function outerPathname(page: Page) {
   return new URL(page.url()).pathname;
 }
 
+function outerLegacyPath(page: Page) {
+  return new URL(page.url()).searchParams.get('path');
+}
+
 /** Same reasoning applied to the iframe's own document: `.toContain('/default.asp')`
  *  would also pass for `/default.aspx` or `/not-default.asp`. */
 function childFramePathname(page: Page) {
@@ -29,7 +35,9 @@ function childFramePathname(page: Page) {
 }
 
 test.describe('container startup', () => {
-  test('/AngularShell/ loads its own assets from /AngularShell/*', async ({ page }) => {
+  test('/AngularShell/ loads its own assets from /AngularShell/*', async ({
+    page,
+  }) => {
     const scriptUrls: string[] = [];
     page.on('response', (response) => {
       if (response.url().endsWith('.js')) scriptUrls.push(response.url());
@@ -42,7 +50,9 @@ test.describe('container startup', () => {
     expect(scriptUrls.some((url) => url.includes('/AngularShell/'))).toBe(true);
   });
 
-  test('the iframe loads exactly /default.asp on first load, nothing else', async ({ page }) => {
+  test('the iframe loads exactly /default.asp on first load, nothing else', async ({
+    page,
+  }) => {
     await page.goto('/AngularShell/');
     const iframe = page.locator('iframe');
     await expect(iframe).toHaveAttribute('src', '/default.asp');
@@ -52,23 +62,70 @@ test.describe('container startup', () => {
     // what was requested, not what the frame's live document actually is.
     // Assert the real thing too.
     expect(childFramePathname(page)).toBe('/default.asp');
+    expect(outerLegacyPath(page)).toBeNull();
   });
 
-  test('no Angular chrome around the iframe — no nav, header, footer, or menu', async ({ page }) => {
+  test('a validated path query deep-links the iframe with its nested query and fragment', async ({
+    page,
+  }) => {
+    await page.goto(
+      '/AngularShell/?path=%2Flegacy-page.asp%3Fpopup%3D1%23details',
+    );
+
+    await expect(page.locator('iframe')).toHaveAttribute(
+      'src',
+      '/legacy-page.asp?popup=1#details',
+    );
+    await expect(page.frameLocator('iframe').locator('body')).toContainText(
+      'Popup',
+    );
+
+    const childUrl = new URL(childFrame(page)?.url() ?? '');
+    expect(childUrl.pathname + childUrl.search + childUrl.hash).toBe(
+      '/legacy-page.asp?popup=1#details',
+    );
+    expect(outerLegacyPath(page)).toBe('/legacy-page.asp?popup=1#details');
+  });
+
+  test('an unsafe path query falls back to /default.asp and is removed from the container URL', async ({
+    page,
+  }) => {
+    await page.goto(
+      '/AngularShell/?path=https%3A%2F%2Fevil.example.com%2Fphish',
+    );
+
+    await expect(page.locator('iframe')).toHaveAttribute('src', '/default.asp');
+    await expect(page.frameLocator('iframe').locator('body')).toContainText(
+      'Stands in for the real ASP Classic entry page',
+    );
+    expect(outerLegacyPath(page)).toBeNull();
+  });
+
+  test('no Angular chrome around the iframe — no nav, header, footer, or menu', async ({
+    page,
+  }) => {
     await page.goto('/AngularShell/');
-    const chromeCount = await page.locator('nav, header, footer, [role="navigation"], [role="banner"]').count();
+    const chromeCount = await page
+      .locator('nav, header, footer, [role="navigation"], [role="banner"]')
+      .count();
     expect(chromeCount).toBe(0);
     await expect(page.locator('iframe')).toHaveCount(1);
   });
 
-  test('the iframe is borderless and fills the viewport; body has no margin', async ({ page }) => {
+  test('the iframe is borderless and fills the viewport; body has no margin', async ({
+    page,
+  }) => {
     await page.goto('/AngularShell/');
 
-    const bodyMargin = await page.evaluate(() => getComputedStyle(document.body).margin);
+    const bodyMargin = await page.evaluate(
+      () => getComputedStyle(document.body).margin,
+    );
     expect(bodyMargin).toBe('0px');
 
     const iframe = page.locator('iframe');
-    const border = await iframe.evaluate((el) => getComputedStyle(el).borderWidth);
+    const border = await iframe.evaluate(
+      (el) => getComputedStyle(el).borderWidth,
+    );
     expect(border).toBe('0px');
 
     const box = await iframe.boundingBox();
@@ -83,34 +140,52 @@ test.describe('container startup', () => {
 });
 
 test.describe('legacy navigation inside the container', () => {
-  test('navigating inside the iframe leaves the outer URL at /AngularShell/', async ({ page }) => {
+  test('navigating inside the iframe records the legacy URL in the container query', async ({
+    page,
+  }) => {
     await page.goto('/AngularShell/');
-    await page.frameLocator('iframe').getByRole('link', { name: '/legacy-page.aspx' }).click();
+    await page
+      .frameLocator('iframe')
+      .getByRole('link', { name: '/legacy-page.aspx' })
+      .click();
 
-    await expect(page.frameLocator('iframe').locator('body')).toContainText('ASPX page');
+    await expect(page.frameLocator('iframe').locator('body')).toContainText(
+      'ASPX page',
+    );
     expect(outerPathname(page)).toBe('/AngularShell/');
+    expect(outerLegacyPath(page)).toBe('/legacy-page.aspx');
   });
 
-  test('ASP-to-ASPX and ASPX-to-ASP navigation both stay inside the iframe', async ({ page }) => {
+  test('ASP-to-ASPX and ASPX-to-ASP navigation both stay inside the iframe', async ({
+    page,
+  }) => {
     await page.goto('/AngularShell/');
     const frame = page.frameLocator('iframe');
 
     await frame.getByRole('link', { name: '/legacy-page.aspx' }).click();
     await expect(frame.locator('body')).toContainText('ASPX page');
     expect(childFramePathname(page)).toBe('/legacy-page.aspx');
+    expect(outerLegacyPath(page)).toBe('/legacy-page.aspx');
 
-    await frame.getByRole('link', { name: '/legacy-page.asp', exact: true }).click();
+    await frame
+      .getByRole('link', { name: '/legacy-page.asp', exact: true })
+      .click();
     await expect(frame.locator('body')).toContainText('Classic ASP page');
     expect(childFramePathname(page)).toBe('/legacy-page.asp');
 
     expect(outerPathname(page)).toBe('/AngularShell/');
+    expect(outerLegacyPath(page)).toBe('/legacy-page.asp');
   });
 
-  test('Back and Forward traverse iframe history without leaving the container', async ({ page }) => {
+  test('Back and Forward traverse iframe history without leaving the container', async ({
+    page,
+  }) => {
     await page.goto('/AngularShell/');
     const frame = page.frameLocator('iframe');
 
-    await frame.getByRole('link', { name: '/legacy-page.asp', exact: true }).click();
+    await frame
+      .getByRole('link', { name: '/legacy-page.asp', exact: true })
+      .click();
     await expect(frame.locator('body')).toContainText('Classic ASP page');
 
     // Not page.goBack(): that waits for the OUTER document's 'load' event,
@@ -119,26 +194,39 @@ test.describe('legacy navigation inside the container', () => {
     // (verified manually in Chrome; this is the behavior being asserted,
     // not a workaround for a flaky wait).
     await page.evaluate(() => window.history.back());
-    await expect(frame.locator('body')).toContainText('Stands in for the real ASP Classic entry page');
+    await expect(frame.locator('body')).toContainText(
+      'Stands in for the real ASP Classic entry page',
+    );
     expect(childFramePathname(page)).toBe('/default.asp');
     expect(outerPathname(page)).toBe('/AngularShell/');
+    expect(outerLegacyPath(page)).toBeNull();
 
     await page.evaluate(() => window.history.forward());
     await expect(frame.locator('body')).toContainText('Classic ASP page');
     expect(childFramePathname(page)).toBe('/legacy-page.asp');
     expect(outerPathname(page)).toBe('/AngularShell/');
+    expect(outerLegacyPath(page)).toBe('/legacy-page.asp');
   });
 
-  test('refresh resets the iframe to /default.asp — accepted Phase-1 behavior', async ({ page }) => {
+  test('refresh restores the iframe page recorded in the container query', async ({
+    page,
+  }) => {
     await page.goto('/AngularShell/');
     const frame = page.frameLocator('iframe');
 
-    await frame.getByRole('link', { name: '/legacy-page.asp', exact: true }).click();
+    await frame
+      .getByRole('link', { name: '/legacy-page.asp', exact: true })
+      .click();
     await expect(frame.locator('body')).toContainText('Classic ASP page');
+    expect(outerLegacyPath(page)).toBe('/legacy-page.asp');
 
     await page.reload();
-    await expect(page.locator('iframe')).toHaveAttribute('src', '/default.asp');
-    await expect(frame.locator('body')).toContainText('Stands in for the real ASP Classic entry page');
+    await expect(page.locator('iframe')).toHaveAttribute(
+      'src',
+      '/legacy-page.asp',
+    );
+    await expect(frame.locator('body')).toContainText('Classic ASP page');
+    expect(outerLegacyPath(page)).toBe('/legacy-page.asp');
   });
 });
 
@@ -155,7 +243,9 @@ test.describe('direct-click popup and download from inside the iframe', () => {
     await popup.close();
   });
 
-  test('a direct click on a download link triggers a download, not a navigation', async ({ page }) => {
+  test('a direct click on a download link triggers a download, not a navigation', async ({
+    page,
+  }) => {
     await page.goto('/AngularShell/');
     const [download] = await Promise.all([
       page.waitForEvent('download'),
@@ -171,13 +261,15 @@ test.describe('direct-click popup and download from inside the iframe', () => {
     // actually navigated elsewhere. Check the live child frame instead.
     expect(childFramePathname(page)).toBe('/default.asp');
     await expect(page.frameLocator('iframe').locator('body')).toContainText(
-      'Stands in for the real ASP Classic entry page'
+      'Stands in for the real ASP Classic entry page',
     );
   });
 });
 
 test.describe('postback-style form submission inside the iframe', () => {
-  test('submitting the form completes without breaking or navigating out of the iframe', async ({ page }) => {
+  test('submitting the form completes without breaking or navigating out of the iframe', async ({
+    page,
+  }) => {
     await page.goto('/AngularShell/');
     const frame = page.frameLocator('iframe');
 
@@ -188,13 +280,17 @@ test.describe('postback-style form submission inside the iframe', () => {
     // WebForms postback returning the same page — still inside the iframe,
     // at the same URL, outer container untouched.
     expect(childFramePathname(page)).toBe('/default.asp');
-    await expect(frame.locator('body')).toContainText('Stands in for the real ASP Classic entry page');
+    await expect(frame.locator('body')).toContainText(
+      'Stands in for the real ASP Classic entry page',
+    );
     expect(outerPathname(page)).toBe('/AngularShell/');
   });
 });
 
 test.describe('startup failure diagnostics', () => {
-  test('a failed legacy-container script load displays a visible, reportable failure message', async ({ page }) => {
+  test('a failed legacy-container script load displays a visible, reportable failure message', async ({
+    page,
+  }) => {
     // Simulates the one failure mode startup-failure.ts's
     // bootstrapApplication().catch() cannot cover: main.js itself never
     // loading at all, not main.js loading and then throwing. See the
